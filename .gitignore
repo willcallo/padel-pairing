@@ -1,0 +1,4 @@
+# generated each week
+schedule*.txt
+schedule*.json
+__pycache__/
