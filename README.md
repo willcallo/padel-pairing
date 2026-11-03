@@ -1,5 +1,30 @@
 # Padel Wednesday pairing
 
+## Using the app (recommended)
+
+Open `index.html` (or the private claude.ai link). Nothing to install.
+
+1. **Luma → event → Guests → Download CSV**, then in the app press **Choose Luma CSV** (or paste the CSV). Only approved guests come in; waitlist/declined are skipped.
+   The app reads the form questions: name, uni email, skill level (1-5), gender, mixed or single-gender courts, partner (optional).
+2. Check the import messages (e.g. a partner name that didn't match anyone) and fix anything in the table.
+3. Press **Make schedule**.
+4. Press **Save PDF** and post it in the group chat: one court map per 15-minute block (numbers in yellow vs white, "Next on" under each court), then a "who plays when" list so everyone can find their number.
+5. Someone drops out? **Schedule → Someone dropped out**, pick them and the time. Only their slots change, filled from people sitting out (closest skill first, then whoever has played least). Copy the short changes message into the chat and save a fresh PDF.
+
+What it guarantees / tries for:
+- Everyone plays at least an hour (max 56 players on 7 courts). Over that it tells you how many to remove.
+- Fixed pairs stay together; singles get a new partner each block.
+- Games matched by skill; opponents rotate.
+- Single-gender requests are met whenever the numbers allow. If they can't be without cutting someone's play time, the organiser check shows exactly who and when.
+- Skills, genders and emails never appear in the PDF. Email is only used to merge duplicate sign-ups.
+- Only the current week is remembered (so you can handle dropouts later from your phone). "Start a new week" clears it. Nothing about players carries over between weeks.
+
+Tests: `node --test test_engine.mjs`
+
+## Command-line version (backup)
+
+`padel.py` is the original terminal version. It doesn't know about gender or Luma; the app replaces it.
+
 Makes the 14:00-16:00 schedule (15-minute blocks, 7 courts) for uni rec padel and patches it when people drop out.
 
 - Fixed pairs stay together all session; singles get a new partner (another single) each block

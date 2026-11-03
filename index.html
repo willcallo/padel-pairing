@@ -1,0 +1,1641 @@
+<title>Wednesday Padel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Layout: one column tool, court-map palette shared with the PDF (court blue, navy, ball yellow, pale ground). */
+:root {
+  --ground: #EEF2F7;
+  --surface: #FFFFFF;
+  --surface-2: #F6F8FB;
+  --ink: #15233A;
+  --muted: #5A6679;
+  --line: #D6DEE9;
+  --court: #2E6DB4;
+  --navy: #1E3D6B;
+  --ball: #F2CE3B;
+  --ball-ink: #1B2430;
+  --warn: #A9401F;
+  --warn-bg: #FBEDE7;
+  --ok: #24724A;
+  --ok-bg: #E5F3EA;
+  --font-display: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0E1626; --surface: #16223A; --surface-2: #1B2945; --ink: #E6ECF5; --muted: #9AA7BC;
+    --line: #2A3B58; --court: #3E7FC8; --navy: #A9C6EE; --ball: #F2CE3B; --ball-ink: #1B2430;
+    --warn: #F29B7D; --warn-bg: #3A2019; --ok: #7CCB9A; --ok-bg: #173327; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0E1626; --surface: #16223A; --surface-2: #1B2945; --ink: #E6ECF5; --muted: #9AA7BC;
+  --line: #2A3B58; --court: #3E7FC8; --navy: #A9C6EE; --ball: #F2CE3B; --ball-ink: #1B2430;
+  --warn: #F29B7D; --warn-bg: #3A2019; --ok: #7CCB9A; --ok-bg: #173327; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--ground); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--ball); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+header.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 22px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark { width: 38px; height: 38px; border-radius: 50%; background: var(--ball); border: 3px solid var(--ball-ink); flex: none;
+  background-image: radial-gradient(circle at 30% 35%, transparent 52%, rgba(27,36,48,.35) 53%, transparent 58%), radial-gradient(circle at 70% 65%, transparent 52%, rgba(27,36,48,.35) 53%, transparent 58%); }
+.brand h1 { font-size: 26px; font-weight: 800; font-stretch: 85%; letter-spacing: .01em; text-transform: uppercase; color: var(--navy); line-height: 1; }
+.brand .sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.save-state { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.save-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.save-state.ok::before { background: var(--ok); }
+.save-state.bad::before { background: var(--warn); }
+
+nav.tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px; width: fit-content; max-width: 100%; }
+nav.tabs button { border: 0; background: transparent; padding: 8px 18px; border-radius: 999px; cursor: pointer; font-family: var(--font-display); font-weight: 700; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+nav.tabs button[aria-selected="true"] { background: var(--navy); color: var(--surface); }
+nav.tabs .badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--ball); color: var(--ball-ink); font-size: 12px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel h2 { font-size: 15px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--navy); }
+.hint { color: var(--muted); font-size: 13.5px; margin: 0; max-width: 65ch; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.grow { flex: 1 1 200px; min-width: 0; }
+
+.btn { border: 1px solid var(--line); background: var(--surface-2); padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--navy); color: var(--surface); border-color: var(--navy); }
+.btn.ball { background: var(--ball); color: var(--ball-ink); border-color: var(--ball-ink); }
+.btn.big { padding: 13px 22px; font-size: 16px; font-family: var(--font-display); letter-spacing: .03em; }
+.btn.danger { color: var(--warn); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.linkish { border: 0; background: none; padding: 0; color: var(--court); text-decoration: underline; cursor: pointer; font-weight: 700; }
+
+textarea, input[type=text], input[type=search], input[type=date], input[type=time], input[type=number], select {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+textarea { width: 100%; min-height: 84px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+.dropzone { border: 2px dashed var(--line); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.dropzone.over { border-color: var(--court); background: var(--surface-2); }
+
+.notes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.notes li { padding: 8px 12px; border-radius: 8px; font-size: 14px; background: var(--surface-2); border-left: 4px solid var(--court); }
+.notes li.warn { background: var(--warn-bg); border-left-color: var(--warn); }
+.notes li.ok { background: var(--ok-bg); border-left-color: var(--ok); }
+
+.capacity { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 18px; border-radius: var(--radius); background: var(--navy); color: var(--surface); position: sticky; bottom: max(10px, env(safe-area-inset-bottom, 0px)); z-index: 5; box-shadow: 0 8px 24px rgba(15, 30, 55, .25); }
+.capacity .stats { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.capacity strong { font-family: var(--font-display); font-size: 18px; font-weight: 800; }
+.capacity .small { font-size: 13px; opacity: .85; }
+.capacity.over { background: var(--warn); }
+.capacity .btn.ball:disabled { opacity: .5; }
+
+details.settings summary { cursor: pointer; font-weight: 700; color: var(--navy); }
+details.settings .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 12px; }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+label.field input, label.field select { color: var(--ink); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 15px; }
+
+.players { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.prow { display: grid; grid-template-columns: minmax(150px, 1.4fr) auto minmax(130px, 1fr) 96px 120px 34px; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.prow.head { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; padding: 6px 0; }
+.prow.flag { background: linear-gradient(90deg, var(--warn-bg), transparent 70%); }
+.prow input[type=text] { width: 100%; }
+.prow select { width: 100%; }
+.skills { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.skills button { width: 32px; height: 34px; border: 0; border-right: 1px solid var(--line); background: var(--surface-2); cursor: pointer; font-weight: 700; font-variant-numeric: tabular-nums; }
+.skills button:last-child { border-right: 0; }
+.skills button[aria-pressed="true"] { background: var(--court); color: #fff; }
+.prow.flag .skills { border-color: var(--warn); }
+.icon-btn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: none; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; }
+.icon-btn:hover { border-color: var(--line); color: var(--warn); }
+.pair-tag { font-size: 11px; font-weight: 700; color: var(--court); text-transform: uppercase; letter-spacing: .05em; }
+.add-row { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 10px; }
+
+.empty { text-align: center; padding: 28px 12px; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.empty strong { color: var(--ink); font-family: var(--font-display); font-size: 18px; }
+
+.blocks { display: flex; gap: 6px; flex-wrap: wrap; }
+.blocks button { border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 7px 11px; cursor: pointer; font-weight: 700; font-variant-numeric: tabular-nums; }
+.blocks button[aria-pressed="true"] { background: var(--ball); color: var(--ball-ink); border-color: var(--ball-ink); }
+.map-box { overflow-x: auto; border-radius: var(--radius); }
+.map-box svg { display: block; width: 100%; height: auto; min-width: 300px; }
+.listview { display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; }
+.listview .g { display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; }
+.listview .c { font-family: var(--font-display); font-weight: 800; color: var(--navy); }
+.listview .vs { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin: 0 6px; }
+.listview .sit { color: var(--muted); font-size: 13.5px; padding: 4px 2px; }
+.chip-n { display: inline-block; min-width: 24px; padding: 0 5px; border-radius: 999px; text-align: center; font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; border: 1.5px solid var(--ball-ink); margin-right: 4px; }
+.chip-n.y { background: var(--ball); color: var(--ball-ink); }
+.chip-n.w { background: #fff; color: var(--ball-ink); }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.stat { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stat .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.stat .v { font-family: var(--font-display); font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stat.good .v { color: var(--ok); }
+.stat.bad .v { color: var(--warn); }
+.stat .d { font-size: 12.5px; color: var(--muted); }
+
+.index-list { columns: 2 280px; column-gap: 24px; font-size: 14px; }
+.index-list div { break-inside: avoid; padding: 5px 0; border-bottom: 1px dashed var(--line); display: grid; grid-template-columns: 34px 1fr; gap: 6px; }
+.index-list .n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--navy); }
+.index-list .t { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.index-list .out { color: var(--warn); }
+
+.confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); }
+.changes pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
+.banner { padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); color: var(--ink); font-size: 14px; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(14px + env(safe-area-inset-top, 0px)); background: var(--ink); color: var(--ground); padding: 10px 16px; border-radius: 999px; font-weight: 700; font-size: 14px; z-index: 20; max-width: calc(100% - 32px); }
+
+@media (max-width: 760px) {
+  .prow.head { display: none; }
+  .prow { grid-template-columns: 1fr 1fr 34px; grid-template-areas: "name name del" "skill skill skill" "partner partner partner" "gender pref pref"; row-gap: 8px; padding: 12px 0; }
+  .prow .c-name { grid-area: name; } .prow .c-skill { grid-area: skill; } .prow .c-partner { grid-area: partner; }
+  .prow .c-gender { grid-area: gender; } .prow .c-pref { grid-area: pref; } .prow .c-del { grid-area: del; }
+  .skills { width: 100%; } .skills button { flex: 1; width: auto; }
+  .brand h1 { font-size: 22px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: rise .2s ease-out; }
+  @keyframes rise { from { transform: translate(-50%, -8px); opacity: 0; } }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <h1>Wednesday Padel</h1>
+        <div class="sub" id="sessionLine">14:00 to 16:00 · 7 courts</div>
+      </div>
+    </div>
+    <div class="save-state" id="saveState" role="status">Not saved yet</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-signups" aria-selected="true" aria-controls="view-signups">Sign-ups <span class="badge num" id="countBadge">0</span></button>
+    <button role="tab" id="tab-schedule" aria-selected="false" aria-controls="view-schedule">Schedule</button>
+  </nav>
+
+  <!-- SIGN-UPS -->
+  <section id="view-signups" role="tabpanel" aria-labelledby="tab-signups" class="wrap" style="gap:18px">
+    <div class="panel">
+      <h2>Import this week's sign-ups</h2>
+      <p class="hint">In Luma open the event, go to <b>Guests</b>, then <b>Download CSV</b>. Pick that file here, drop it on this box, or paste its contents. Only approved guests are added. Importing replaces this week's list.</p>
+      <div class="dropzone" id="dropzone">
+        <div class="row">
+          <label class="btn primary" for="fileInput">Choose Luma CSV</label>
+          <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" hidden>
+          <span class="hint">or paste below</span>
+        </div>
+        <textarea id="pasteBox" placeholder="Paste the Luma CSV here (header row included)" aria-label="Paste sign-ups"></textarea>
+        <div class="row">
+          <button class="btn" id="importPaste">Import pasted list</button>
+          <button class="linkish" id="loadExample">Try it with example sign-ups</button>
+        </div>
+      </div>
+      <ul class="notes" id="importNotes"></ul>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h2 id="playersTitle">This week's players</h2>
+        <div id="newWeekBox"><button class="btn danger" id="newWeek">Start a new week</button></div>
+      </div>
+      <details class="settings" id="settingsBox">
+        <summary id="settingsSummary">Session settings</summary>
+        <div class="grid">
+          <label class="field">Date <input type="date" id="setDate"></label>
+          <label class="field">Courts <input type="number" id="setCourts" min="1" max="7"></label>
+          <label class="field">Start <input type="time" id="setStart" step="300"></label>
+          <label class="field">End <input type="time" id="setEnd" step="300"></label>
+          <label class="field">Block (min)
+            <select id="setBlock"><option>10</option><option>15</option><option>20</option><option>30</option></select>
+          </label>
+          <label class="field">Guaranteed play (min) <input type="number" id="setMin" min="0" step="5"></label>
+        </div>
+      </details>
+      <div id="playersBox"></div>
+      <form class="add-row" id="addForm" autocomplete="off">
+        <input type="text" id="addName" class="grow" placeholder="Add a walk-in: name" aria-label="New player name">
+        <button class="btn" type="submit">Add player</button>
+      </form>
+    </div>
+
+    <div class="capacity" id="capacity">
+      <div class="stats"><strong id="capMain">0 players</strong><span class="small" id="capSub">Import sign-ups to start</span></div>
+      <button class="btn ball big" id="makeSchedule" disabled>Make schedule</button>
+    </div>
+  </section>
+
+  <!-- SCHEDULE -->
+  <section id="view-schedule" role="tabpanel" aria-labelledby="tab-schedule" class="wrap" style="gap:18px" hidden>
+    <div id="schedEmpty" class="panel empty">
+      <strong>No schedule yet</strong>
+      <span>Import sign-ups, check skills and partners, then press Make schedule.</span>
+      <button class="btn primary" id="gotoSignups">Go to sign-ups</button>
+    </div>
+    <div id="schedBody" class="wrap" style="gap:18px" hidden>
+      <div class="banner" id="staleBanner" hidden>You changed the player list after making this schedule. Those changes aren't in it. Use <b>Someone dropped out</b> for dropouts, or <b>Shuffle again</b> to rebuild with the new list.</div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <h2>Share it</h2>
+          <span class="hint" id="schedMeta"></span>
+        </div>
+        <div class="row">
+          <button class="btn ball big" id="savePdf">Save PDF</button>
+          <button class="btn" id="copyText">Copy as text</button>
+          <span id="shuffleBox"><button class="btn" id="shuffle">Shuffle again</button></span>
+        </div>
+        <p class="hint" id="pdfNote">PDF: one court map per block, then the "who plays when" list with everyone's number.</p>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <h2>Courts</h2>
+          <div class="row" style="gap:6px">
+            <button class="btn" id="viewMap" aria-pressed="true">Map</button>
+            <button class="btn" id="viewList" aria-pressed="false">List</button>
+          </div>
+        </div>
+        <div class="blocks" id="blockPicker" role="group" aria-label="Pick a time"></div>
+        <div class="map-box" id="mapBox"></div>
+        <div class="listview" id="listBox" hidden></div>
+      </div>
+
+      <div class="panel">
+        <h2>Someone dropped out</h2>
+        <p class="hint">Only their slots change. Each slot goes to someone sitting out at that time, closest skill first, then whoever has played least.</p>
+        <div class="row">
+          <select id="dropWho" class="grow" aria-label="Who dropped out"></select>
+          <select id="dropFrom" aria-label="From when"></select>
+          <button class="btn primary" id="dropApply">Mark as out</button>
+        </div>
+        <div class="changes" id="changesBox" hidden>
+          <pre id="changesText"></pre>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="copyChanges">Copy changes</button>
+            <button class="btn" id="undoDrop">Undo last</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Organiser check</h2>
+        <p class="hint">Only you see this. It isn't in the PDF.</p>
+        <div class="summary" id="summaryBox"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <h2>Who plays when</h2>
+          <input type="search" id="indexSearch" placeholder="Find a name or number" aria-label="Find a player">
+        </div>
+        <div class="index-list" id="indexBox"></div>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script id="engine">
+(function (root) {
+  "use strict";
+  // Cost weights. Higher = tries harder to avoid it.
+  const W_TEAM = 4.0;     // x (difference in average team skill)^2
+  const W_SPREAD = 1.5;   // x (best - worst player in the game)^2
+  const W_OPP = 1.5;      // per previous meeting as opponents today
+  const W_PART = 6.0;     // per previous time two singles partnered today
+  const W_GENDER = 10.0;  // per other-gender player in a game, for each single-gender player in it
+  const DROP_EXTRA_GAME = 0.6;
+  const RESTARTS = 2, MAX_ATTEMPTS = 20;
+
+  class PadelError extends Error { constructor(m) { super(m); this.name = "PadelError"; } }
+
+  function makeRng(seed) {
+    let a = (seed >>> 0) || 1;
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function parseTime(s) {
+    const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(s || ""));
+    if (!m || +m[1] > 23 || +m[2] > 59) throw new PadelError(`"${s}" isn't a valid time, use HH:MM like 14:00`);
+    return +m[1] * 60 + +m[2];
+  }
+  const fmtTime = t => String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+
+  function blockTimes(start, end, block) {
+    const s = parseTime(start), e = parseTime(end);
+    if (!(block > 0)) throw new PadelError("Block length must be more than 0 minutes");
+    const out = [];
+    for (let t = s; t + block <= e; t += block) out.push(fmtTime(t));
+    if (!out.length) throw new PadelError(`No ${block}-minute blocks fit between ${start} and ${end}`);
+    return out;
+  }
+
+  const key = (a, b) => (a < b ? a + "\n" + b : b + "\n" + a);
+  const isMF = g => g === "M" || g === "F";
+
+  // Single-gender request that the engine should try to honour.
+  function wantsSingle(players, n) {
+    const p = players[n];
+    if (!p || p.pref !== "single" || !isMF(p.gender)) return false;
+    const q = p.partner && players[p.partner];
+    if (q && q.gender !== p.gender) return false; // they chose a mixed pair
+    return true;
+  }
+
+  function capacityCheck(n, courts, nBlocks, minBlocks, minMinutes) {
+    if (n < 4) throw new PadelError(`Need at least 4 players, got ${n}`);
+    const used = Math.min(courts, Math.floor(n / 4));
+    const slots = nBlocks * used * 4, need = n * minBlocks;
+    if (need > slots) {
+      const maxP = Math.floor((nBlocks * courts * 4) / minBlocks), extra = n - maxP;
+      throw new PadelError(`${n} players need ${need} playing slots for everyone to get ${minMinutes} minutes, but ${courts} courts x ${nBlocks} blocks only gives ${slots}. Remove ${extra} player${extra === 1 ? "" : "s"} (max ${maxP}) or add a court.`);
+    }
+    return used;
+  }
+  function maxPlayers(courts, nBlocks, minBlocks) {
+    return minBlocks > 0 ? Math.floor((nBlocks * courts * 4) / minBlocks) : Infinity;
+  }
+
+  function genderDeficit(names, ctx) {
+    let d = 0;
+    for (const g of ["M", "F"]) {
+      let n = 0, s = 0;
+      for (const x of names) if (ctx.gender[x] === g) { n++; if (ctx.single[x]) s++; }
+      if (s) d += Math.max(0, 4 * Math.ceil(s / 4) - n);
+    }
+    return d;
+  }
+
+  function select(units, hist, slots, blocksLeft, minBlocks, rng, ctx) {
+    let maxG = 0;
+    for (const n in hist.games) maxG = Math.max(maxG, hist.games[n]);
+    const must = n => { const need = minBlocks - hist.games[n]; return need > 0 && need >= blocksLeft; };
+    const score = n => (must(n) ? 10000 : 0) + (maxG - hist.games[n]) * 100 + (hist.streak[n] >= 2 ? 10 : 0) + rng();
+    const pairs = units.filter(u => u.length === 2).map(u => [2 * score(u[0]), u]).sort((a, b) => b[0] - a[0]);
+    const singles = units.filter(u => u.length === 1).map(u => [score(u[0]), u[0]]).sort((a, b) => b[0] - a[0]);
+    const pv = [0], sv = [0];
+    for (const [v] of pairs) pv.push(pv[pv.length - 1] + v);
+    for (const [v] of singles) sv.push(sv[sv.length - 1] + v);
+    let bestK = null, bestV = -Infinity;
+    for (let k = 0; k <= Math.min(pairs.length, Math.floor(slots / 2)); k++) {
+      const s = slots - 2 * k;
+      if (s > singles.length) continue;
+      const v = pv[k] + sv[s];
+      if (v > bestV) { bestV = v; bestK = k; }
+    }
+    const s = slots - 2 * bestK;
+    const selPairs = pairs.slice(0, bestK).map(x => x[1]);
+    const selSingles = singles.slice(0, s).map(x => x[1]);
+    const rest = singles.slice(s).map(x => x[1]);
+
+    // Nudge the draw (only swapping people with equal games so fairness is untouched)
+    // so single-gender players can be grouped in fours.
+    if (ctx.anySingle) {
+      const all = () => selPairs.flat().concat(selSingles);
+      let d = genderDeficit(all(), ctx);
+      for (let iter = 0; iter < 12 && d > 0; iter++) {
+        const base = all();
+        let best = null;
+        for (let i = 0; i < selSingles.length; i++) {
+          const out = selSingles[i];
+          if (must(out)) continue;
+          for (let j = 0; j < rest.length; j++) {
+            const inn = rest[j];
+            if (hist.games[inn] !== hist.games[out]) continue;
+            const nd = genderDeficit(base.map(x => (x === out ? inn : x)), ctx);
+            if (nd < d && (!best || nd < best.nd)) best = { i, j, nd };
+          }
+        }
+        if (!best) break;
+        const tmp = selSingles[best.i]; selSingles[best.i] = rest[best.j]; rest[best.j] = tmp;
+        d = best.nd;
+      }
+    }
+    return [selPairs, selSingles];
+  }
+
+  function optimise(fixedPairs, singles, ctx, hist, rng) {
+    const { skill, gender, single, anySingle } = ctx;
+    const opp = hist.opp, part = hist.part;
+    const g = (m, k) => m.get(k) || 0;
+    let best = null;
+    for (let r = 0; r < RESTARTS; r++) {
+      const ss = singles.map(n => [skill[n] + rng() * 0.9, n]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+      const teams = fixedPairs.map(p => [p[0], p[1]]);
+      for (let i = 0; i < ss.length; i += 2) teams.push([ss[i], ss[i + 1]]);
+      const fixed = teams.map((_, i) => i < fixedPairs.length);
+      const order = teams.map((t, i) => [(skill[t[0]] + skill[t[1]]) / 2 + rng() * 0.9, i]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+      const games = [];
+      for (let i = 0; i < order.length; i += 2) games.push([order[i], order[i + 1]]);
+      const teamGame = new Array(teams.length);
+      games.forEach((gm, gi) => { teamGame[gm[0]] = gi; teamGame[gm[1]] = gi; });
+
+      const cost = gi => {
+        const ta = teams[games[gi][0]], tb = teams[games[gi][1]];
+        const a0 = ta[0], a1 = ta[1], b0 = tb[0], b1 = tb[1];
+        const s0 = skill[a0], s1 = skill[a1], s2 = skill[b0], s3 = skill[b1];
+        const mx = Math.max(s0, s1, s2, s3), mn = Math.min(s0, s1, s2, s3);
+        let c = W_TEAM * ((s0 + s1 - s2 - s3) / 2) ** 2 + W_SPREAD * (mx - mn) ** 2;
+        c += W_OPP * (g(opp, key(a0, b0)) + g(opp, key(a0, b1)) + g(opp, key(a1, b0)) + g(opp, key(a1, b1)));
+        if (!fixed[games[gi][0]]) c += W_PART * g(part, key(a0, a1));
+        if (!fixed[games[gi][1]]) c += W_PART * g(part, key(b0, b1));
+        if (anySingle) {
+          const ps = [a0, a1, b0, b1];
+          for (const x of ps) if (single[x]) for (const y of ps) if (gender[y] !== gender[x]) c += W_GENDER;
+        }
+        return c;
+      };
+      const gc = games.map((_, gi) => cost(gi));
+      const pos = [];
+      teams.forEach((_, ti) => { if (!fixed[ti]) { pos.push([ti, 0]); pos.push([ti, 1]); } });
+
+      let improved = true, passes = 0;
+      while (improved && passes < 30) {
+        improved = false; passes++;
+        for (let i = 0; i < pos.length; i++) {
+          const [ti, ki] = pos[i];
+          for (let j = i + 1; j < pos.length; j++) {
+            const [tj, kj] = pos[j];
+            if (ti === tj) continue;
+            const gi = teamGame[ti], gj = teamGame[tj];
+            const old = gc[gi] + (gj !== gi ? gc[gj] : 0);
+            let t = teams[ti][ki]; teams[ti][ki] = teams[tj][kj]; teams[tj][kj] = t;
+            const ni = cost(gi), nj = gj !== gi ? cost(gj) : 0;
+            if (ni + nj < old - 1e-9) { gc[gi] = ni; if (gj !== gi) gc[gj] = nj; improved = true; }
+            else { t = teams[ti][ki]; teams[ti][ki] = teams[tj][kj]; teams[tj][kj] = t; }
+          }
+        }
+        for (let ti = 0; ti < teams.length; ti++) {
+          for (let tj = ti + 1; tj < teams.length; tj++) {
+            const gi = teamGame[ti], gj = teamGame[tj];
+            if (gi === gj) continue;
+            const pi = games[gi].indexOf(ti), pj = games[gj].indexOf(tj);
+            const old = gc[gi] + gc[gj];
+            games[gi][pi] = tj; games[gj][pj] = ti;
+            const ni = cost(gi), nj = cost(gj);
+            if (ni + nj < old - 1e-9) { gc[gi] = ni; gc[gj] = nj; teamGame[ti] = gj; teamGame[tj] = gi; improved = true; }
+            else { games[gi][pi] = ti; games[gj][pj] = tj; }
+          }
+        }
+      }
+      const total = gc.reduce((a, b) => a + b, 0);
+      if (!best || total < best.cost) {
+        best = { cost: total, games: games.map(([a, b]) => ({ ta: teams[a].slice(), tb: teams[b].slice(), fa: fixed[a], fb: fixed[b] })) };
+      }
+    }
+    return best;
+  }
+
+  function makeCtx(players) {
+    const names = Object.keys(players);
+    const skill = {}, gender = {}, single = {};
+    let anySingle = false;
+    for (const n of names) {
+      skill[n] = players[n].skill;
+      gender[n] = players[n].gender || "X";
+      single[n] = wantsSingle(players, n);
+      if (single[n]) anySingle = true;
+    }
+    return { names, skill, gender, single, anySingle };
+  }
+
+  function generateOnce(players, courtsUsed, times, minBlocks, rng) {
+    const ctx = makeCtx(players);
+    const names = ctx.names;
+    const units = [], seen = new Set();
+    for (const n of names) {
+      if (seen.has(n)) continue;
+      const p = players[n].partner;
+      const u = p && players[p] ? [n, p] : [n];
+      units.push(u); u.forEach(x => seen.add(x));
+    }
+    const hist = { games: {}, streak: {}, opp: new Map(), part: new Map() };
+    names.forEach(n => { hist.games[n] = 0; hist.streak[n] = 0; });
+    const nCand = ctx.anySingle ? 8 : 4;
+    const blocks = [];
+    times.forEach((t, b) => {
+      let best = null;
+      for (let c = 0; c < nCand; c++) {
+        const [pairs, singles] = select(units, hist, courtsUsed * 4, times.length - b, minBlocks, rng, ctx);
+        const res = optimise(pairs, singles, ctx, hist, rng);
+        if (!best || res.cost < best.cost) best = res;
+      }
+      const sum = gm => gm.ta.concat(gm.tb).reduce((a, x) => a + ctx.skill[x], 0);
+      const games = best.games.slice().sort((a, b) => sum(b) - sum(a));
+      const playing = new Set(), outGames = [];
+      games.forEach((gm, i) => {
+        outGames.push({ court: i + 1, teams: [gm.ta, gm.tb] });
+        for (const x of gm.ta) for (const y of gm.tb) hist.opp.set(key(x, y), (hist.opp.get(key(x, y)) || 0) + 1);
+        if (!gm.fa) hist.part.set(key(gm.ta[0], gm.ta[1]), (hist.part.get(key(gm.ta[0], gm.ta[1])) || 0) + 1);
+        if (!gm.fb) hist.part.set(key(gm.tb[0], gm.tb[1]), (hist.part.get(key(gm.tb[0], gm.tb[1])) || 0) + 1);
+        gm.ta.concat(gm.tb).forEach(x => playing.add(x));
+      });
+      for (const n of names) {
+        if (playing.has(n)) { hist.games[n]++; hist.streak[n] = 0; } else hist.streak[n]++;
+      }
+      blocks.push({ time: t, games: outGames, sittingOut: names.filter(n => !playing.has(n)).sort(byName) });
+    });
+    return { blocks, hist };
+  }
+
+  const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
+
+  function assignNumbers(names) {
+    const out = {};
+    names.slice().sort(byName).forEach((n, i) => { out[n] = i + 1; });
+    return out;
+  }
+
+  // players: {name: {skill 1-5, partner name|null, gender "M"|"F"|"X", pref "single"|"any"}}
+  function generate(players, opts) {
+    opts = Object.assign({ courts: 7, start: "14:00", end: "16:00", block: 15, minMinutes: 60, seed: null, date: "" }, opts || {});
+    const times = blockTimes(opts.start, opts.end, +opts.block);
+    const minBlocks = Math.ceil(+opts.minMinutes / +opts.block);
+    if (minBlocks > times.length) throw new PadelError(`Can't guarantee ${opts.minMinutes} minutes in a ${times.length * opts.block}-minute session`);
+    for (const n in players) {
+      const p = players[n];
+      if (!(p.skill >= 1 && p.skill <= 5)) throw new PadelError(`${n} needs a skill level from 1 to 5`);
+      if (p.partner && (!players[p.partner] || players[p.partner].partner !== n)) throw new PadelError(`${n}'s partner ${p.partner} isn't paired back. Fix it in the partner column.`);
+    }
+    const used = capacityCheck(Object.keys(players).length, +opts.courts, times.length, minBlocks, opts.minMinutes);
+    let seed = opts.seed == null ? Math.floor(Math.random() * 1e6) + 1 : +opts.seed;
+    let res = null, attempt = 0;
+    for (; attempt < MAX_ATTEMPTS; attempt++) {
+      res = generateOnce(players, used, times, minBlocks, makeRng(seed + attempt));
+      if (Math.min(...Object.values(res.hist.games)) >= minBlocks) break;
+    }
+    if (attempt === MAX_ATTEMPTS) throw new PadelError(`Couldn't find a schedule giving everyone ${opts.minMinutes} minutes. Try Shuffle again.`);
+    const pl = {};
+    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any" };
+    return {
+      settings: { courts: +opts.courts, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
+      players: pl,
+      numbers: assignNumbers(Object.keys(players)),
+      blocks: res.blocks,
+    };
+  }
+
+  // ---------------------------------------------------------------- dropouts
+  const times = s => s.blocks.map(b => b.time);
+  const gamePlayers = gm => gm.teams.flat().filter(Boolean);
+  function droppedBy(s, n, b) {
+    const d = s.players[n].droppedFrom;
+    return d != null && times(s).indexOf(d) <= b;
+  }
+  function gamesPlayed(s) {
+    const c = {};
+    for (const n in s.players) c[n] = 0;
+    for (const blk of s.blocks) for (const gm of blk.games) for (const x of gamePlayers(gm)) c[x]++;
+    return c;
+  }
+  function meetings(s) {
+    const m = new Map();
+    for (const blk of s.blocks) for (const gm of blk.games) {
+      const ps = gamePlayers(gm);
+      for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) m.set(key(ps[i], ps[j]), (m.get(key(ps[i], ps[j])) || 0) + 1);
+    }
+    return m;
+  }
+  function genderBreaks(s, ps) {
+    for (const x of ps) if (wantsSingle(s.players, x)) for (const y of ps) if ((s.players[y].gender || "X") !== s.players[x].gender) return true;
+    return false;
+  }
+
+  function resolveName(s, name) {
+    const want = String(name).trim().toLowerCase();
+    const hit = Object.keys(s.players).find(n => n.toLowerCase() === want);
+    if (!hit) throw new PadelError(`"${name}" isn't in this schedule`);
+    return hit;
+  }
+
+  // Edits the schedule in place. Returns [{time, court, out, in}] (in = null when nobody was free).
+  function dropPlayers(s, names, fromTime, seed) {
+    const ts = times(s);
+    const f = fromTime ? ts.indexOf(fromTime) : 0;
+    if (f < 0) throw new PadelError(`${fromTime} isn't a block start. Valid times: ${ts.join(", ")}`);
+    const leaving = [];
+    for (const raw of names) {
+      const n = resolveName(s, raw);
+      if (s.players[n].droppedFrom != null) throw new PadelError(`${n} is already marked as out from ${s.players[n].droppedFrom}`);
+      if (!leaving.includes(n)) leaving.push(n);
+    }
+    leaving.forEach(n => { s.players[n].droppedFrom = ts[f]; });
+    const rng = makeRng(seed == null ? 12345 : seed);
+    const changes = [];
+    for (let b = f; b < s.blocks.length; b++) {
+      const blk = s.blocks[b];
+      blk.sittingOut = blk.sittingOut.filter(n => !leaving.includes(n));
+      for (const gm of blk.games) {
+        for (const team of gm.teams) {
+          for (let i = 0; i < team.length; i++) {
+            const n = team[i];
+            if (!leaving.includes(n)) continue;
+            const others = gamePlayers(gm).filter(x => x !== n);
+            const cands = blk.sittingOut.filter(c => !droppedBy(s, c, b) &&
+              (!s.players[c].partner || droppedBy(s, s.players[c].partner, b)));
+            if (!cands.length) { team[i] = null; changes.push({ time: blk.time, court: gm.court, out: n, in: null }); continue; }
+            const counts = gamesPlayed(s), meet = meetings(s);
+            const fewest = Math.min(...cands.map(c => counts[c]));
+            const sk = s.players[n].skill;
+            const scored = cands.map(c => [
+              genderBreaks(s, others.concat([c])) ? 1 : 0,
+              Math.abs(s.players[c].skill - sk) + DROP_EXTRA_GAME * (counts[c] - fewest),
+              others.reduce((a, o) => a + (meet.get(key(c, o)) || 0), 0),
+              rng(), c]);
+            scored.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]);
+            const pick = scored[0][4];
+            team[i] = pick;
+            blk.sittingOut.splice(blk.sittingOut.indexOf(pick), 1);
+            changes.push({ time: blk.time, court: gm.court, out: n, in: pick });
+          }
+        }
+      }
+    }
+    return changes;
+  }
+
+  // ---------------------------------------------------------------- reporting
+  function summary(s) {
+    const P = s.players, set = s.settings;
+    const active = Object.keys(P).filter(n => P[n].droppedFrom == null);
+    const counts = gamesPlayed(s);
+    const pairs = active.filter(n => P[n].partner && P[P[n].partner] && P[P[n].partner].droppedFrom == null).length / 2;
+    const opp = new Map(), part = new Map();
+    const gaps = [], spreads = [];
+    let short = 0, gGames = 0, gMet = 0;
+    const gMisses = [];
+    for (const blk of s.blocks) for (const gm of blk.games) {
+      const [ta, tb] = gm.teams;
+      if (ta.includes(null) || tb.includes(null)) { short++; continue; }
+      for (const x of ta) for (const y of tb) opp.set(key(x, y), (opp.get(key(x, y)) || 0) + 1);
+      for (const t of [ta, tb]) if (P[t[0]].partner !== t[1]) part.set(key(t[0], t[1]), (part.get(key(t[0], t[1])) || 0) + 1);
+      const sk = ta.concat(tb).map(x => P[x].skill);
+      gaps.push(Math.abs(sk[0] + sk[1] - sk[2] - sk[3]) / 2);
+      spreads.push(Math.max(...sk) - Math.min(...sk));
+      const ps = ta.concat(tb), wants = ps.filter(x => wantsSingle(P, x));
+      if (wants.length) {
+        gGames++;
+        const bad = wants.filter(x => ps.some(y => (P[y].gender || "X") !== P[x].gender));
+        if (bad.length) bad.forEach(x => gMisses.push({ time: blk.time, court: gm.court, name: x }));
+        else gMet++;
+      }
+    }
+    const played = active.map(n => counts[n]);
+    const minP = played.length ? Math.min(...played) : 0, maxP = played.length ? Math.max(...played) : 0;
+    let repOpp = 0, repPart = 0;
+    opp.forEach(v => { if (v > 1) repOpp++; });
+    part.forEach(v => { if (v > 1) repPart++; });
+    return {
+      players: active.length, pairs, singles: active.length - 2 * pairs,
+      courts: set.courtsUsed, blocks: s.blocks.length, block: set.block, seed: set.seed,
+      minBlocks: minP, maxBlocks: maxP, minMinutes: minP * set.block, ok: played.length > 0 && minP >= set.minBlocks,
+      repeatOpponents: repOpp, repeatPartners: repPart,
+      avgGap: gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0,
+      maxGap: gaps.length ? Math.max(...gaps) : 0, maxSpread: spreads.length ? Math.max(...spreads) : 0,
+      shortGames: short, genderGames: gGames, genderMet: gMet, genderMisses: gMisses,
+    };
+  }
+
+  function playerSlots(s) {
+    const out = {};
+    for (const n in s.players) out[n] = [];
+    for (const blk of s.blocks) for (const gm of blk.games) for (const x of gamePlayers(gm)) out[x].push({ time: blk.time, court: gm.court });
+    return out;
+  }
+
+  function renderText(s) {
+    const N = s.numbers, lines = ["*Wednesday Padel*" + (s.settings.date ? " " + s.settings.date : ""), ""];
+    const nm = x => (x ? `${x} (${N[x]})` : "NEEDS 1 PLAYER");
+    for (const blk of s.blocks) {
+      lines.push(`*${blk.time}*`);
+      for (const gm of blk.games) lines.push(`C${gm.court}: ${gm.teams[0].map(nm).join(" & ")} vs ${gm.teams[1].map(nm).join(" & ")}`);
+      if (blk.sittingOut.length) lines.push("Sitting out: " + blk.sittingOut.join(", "));
+      lines.push("");
+    }
+    lines.push("*Who plays when* (search your name)");
+    const slots = playerSlots(s), first = s.blocks[0].time;
+    for (const n of Object.keys(s.players).sort(byName)) {
+      const d = s.players[n].droppedFrom;
+      if (d === first) continue;
+      let line = `${N[n]}. ${n}: ${slots[n].map(x => `${x.time} C${x.court}`).join(", ") || "not playing"}`;
+      if (d) line += ` (out from ${d})`;
+      lines.push(line);
+    }
+    return lines.join("\n") + "\n";
+  }
+
+  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, gamesPlayed, playerSlots,
+    renderText, maxPlayers, wantsSingle, byName, gamePlayers, consts: { W_TEAM, W_SPREAD, W_OPP, W_PART, W_GENDER, DROP_EXTRA_GAME } };
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+
+<script id="importer">
+(function (root) {
+  "use strict";
+
+  function parseCSV(text) {
+    text = String(text || "").replace(/^﻿/, "");
+    const first = text.split(/\r?\n/, 1)[0] || "";
+    const delim = (first.match(/\t/g) || []).length > (first.match(/,/g) || []).length ? "\t" : ",";
+    const rows = [];
+    let row = [], field = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
+        else field += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === delim) { row.push(field); field = ""; }
+      else if (ch === "\n" || ch === "\r") {
+        if (ch === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); rows.push(row); row = []; field = "";
+      } else field += ch;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(r => r.some(c => c.trim() !== ""));
+  }
+
+  const clean = s => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+
+  function detectColumns(headers) {
+    const h = headers.map(x => clean(x).toLowerCase());
+    const find = (pred, not = []) => h.findIndex((x, i) => !not.includes(i) && pred(x));
+    const pref = find(x => /mixed|court/.test(x));
+    const status = find(x => x === "approval_status" || /approval|status/.test(x));
+    const skill = find(x => /skill|level|ability|standard/.test(x), [pref]);
+    const gender = find(x => /gender|\bsex\b/.test(x), [pref]);
+    const partner = find(x => /partner|pair/.test(x), [pref]);
+    let email = find(x => /uni/.test(x) && /e-?mail/.test(x));
+    if (email < 0) email = find(x => /e-?mail/.test(x));
+    let name = find(x => x === "name" || x === "full name" || x === "full_name");
+    if (name < 0) name = find(x => /\bname\b/.test(x) && !/first|last|partner|user|ticket/.test(x), [partner]);
+    const first = find(x => /first.?name/.test(x)), last = find(x => /last.?name|surname/.test(x));
+    return { name, first, last, email, skill, gender, pref, partner, status };
+  }
+
+  function parseSkill(v) {
+    const s = clean(v).toLowerCase();
+    const m = /[1-5]/.exec(s);
+    if (m) return +m[0];
+    if (/beginn|new|never/.test(s)) return 1;
+    if (/improv|casual/.test(s)) return 2;
+    if (/intermed/.test(s)) return 3;
+    if (/advanc|good|strong/.test(s)) return 4;
+    if (/expert|compet|elite/.test(s)) return 5;
+    return null;
+  }
+  function parseGender(v) {
+    const s = clean(v).toLowerCase();
+    if (/^(f|female|woman|women|girl|lady)\b/.test(s) || /\b(female|woman)\b/.test(s)) return "F";
+    if (/^(m|male|man|men|boy)\b/.test(s) || /\b(male|man)\b/.test(s)) return "M";
+    return "X";
+  }
+  function parsePref(v) {
+    const s = clean(v).toLowerCase();
+    if (/single|same|only/.test(s) && !/don.?t mind|either|any/.test(s)) return "single";
+    return "any";
+  }
+  const NONE = /^(|none|no|nope|n\/?a|na|-+|\.|x|solo|single|nobody|no one|noone|no partner|not sure|tbc|tbd|no preference|any|anyone)$/i;
+
+  function lev(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[n];
+  }
+
+  // Returns a name from `names`, null for "no partner", or undefined when it can't be matched.
+  function matchPartner(text, self, names) {
+    const t = clean(text).replace(/[.,!?;:'"()]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+    if (NONE.test(t)) return null;
+    const pool = names.filter(n => n !== self);
+    const low = pool.map(n => [n, n.toLowerCase().replace(/[.,'"()]/g, "").replace(/\s+/g, " ")]);
+    const uniq = arr => (arr.length === 1 ? arr[0][0] : undefined);
+    let hit = low.filter(([, l]) => l === t);
+    if (hit.length) return uniq(hit);
+    const toks = t.split(" ");
+    if (toks.length === 1) {
+      hit = low.filter(([, l]) => l.split(" ")[0] === t);
+      if (hit.length) return uniq(hit);
+      hit = low.filter(([, l]) => l.split(" ").slice(-1)[0] === t);
+      if (hit.length) return uniq(hit);
+    } else {
+      hit = low.filter(([, l]) => { const p = l.split(" "); return p[0] === toks[0] && p.slice(-1)[0].startsWith(toks[toks.length - 1]); });
+      if (hit.length) return uniq(hit);
+    }
+    const scored = low.map(([n, l]) => [n, lev(l, t)]).sort((a, b) => a[1] - b[1]);
+    if (scored.length && scored[0][1] <= Math.max(1, Math.floor(t.length / 6)) && (scored.length < 2 || scored[1][1] > scored[0][1])) return scored[0][0];
+    if (toks.length === 1) {
+      const f = low.map(([n, l]) => [n, lev(l.split(" ")[0], t)]).filter(x => x[1] <= 1);
+      if (f.length === 1) return f[0][0];
+    }
+    return undefined;
+  }
+
+  // Luma CSV text -> {players:[{name, skill, skillFlag, gender, pref, partner}], notes:[{level, text}], columns}
+  function importSignups(text) {
+    const rows = parseCSV(text);
+    if (!rows.length) return { players: [], notes: [{ level: "warn", text: "Nothing to import: the file or box is empty." }] };
+    const cols = detectColumns(rows[0]);
+    const notes = [];
+    if (cols.name < 0 && cols.first < 0) {
+      return { players: [], notes: [{ level: "warn", text: "Couldn't find a name column. Make sure you include the header row from the Luma CSV." }] };
+    }
+    const missing = [];
+    if (cols.skill < 0) missing.push("skill level");
+    if (cols.gender < 0) missing.push("gender");
+    if (cols.pref < 0) missing.push("mixed or single-gender courts");
+    if (cols.partner < 0) missing.push("partner");
+    if (missing.length) notes.push({ level: "warn", text: `Couldn't find a column for ${missing.join(", ")}. Check the Luma questions, or set them in the table below.` });
+
+    const get = (r, i) => (i >= 0 ? clean(r[i]) : "");
+    const skipped = {};
+    const byKey = new Map();
+    let dupes = 0;
+    for (const r of rows.slice(1)) {
+      let name = get(r, cols.name);
+      if (!name) name = clean(get(r, cols.first) + " " + get(r, cols.last));
+      if (!name) continue;
+      const status = get(r, cols.status).toLowerCase();
+      if (cols.status >= 0 && status && status !== "approved" && status !== "going" && status !== "checked_in") {
+        const label = { pending_approval: "pending", waitlist: "waitlist", declined: "declined", invited: "invited (not registered)" }[status] || status.replace(/_/g, " ");
+        skipped[label] = (skipped[label] || 0) + 1;
+        continue;
+      }
+      const email = get(r, cols.email).toLowerCase();
+      const k = email || name.toLowerCase();
+      if (byKey.has(k)) dupes++;
+      byKey.set(k, {
+        name, rawSkill: get(r, cols.skill), skill: parseSkill(get(r, cols.skill)),
+        gender: cols.gender >= 0 ? parseGender(get(r, cols.gender)) : "X",
+        pref: cols.pref >= 0 ? parsePref(get(r, cols.pref)) : "any",
+        partnerText: get(r, cols.partner),
+      });
+    }
+    // same name, different emails -> keep both, label them apart
+    const seenNames = {};
+    const list = [...byKey.values()];
+    for (const p of list) {
+      const lo = p.name.toLowerCase();
+      seenNames[lo] = (seenNames[lo] || 0) + 1;
+      if (seenNames[lo] > 1) p.name = `${p.name} (${seenNames[lo]})`;
+    }
+    const names = list.map(p => p.name);
+
+    // partners
+    const claim = {}, unmatched = [];
+    for (const p of list) {
+      const m = p.partnerText ? matchPartner(p.partnerText, p.name, names) : null;
+      if (m === undefined) unmatched.push(p);
+      claim[p.name] = m || null;
+    }
+    const partner = {};
+    for (const p of list) {
+      const b = claim[p.name];
+      if (b && claim[b] === p.name) { partner[p.name] = b; partner[b] = p.name; }
+    }
+    const conflicts = [];
+    for (const p of list) {
+      const a = p.name, b = claim[a];
+      if (!b || partner[a]) continue;
+      if (!partner[b] && !claim[b]) { partner[a] = b; partner[b] = a; }
+      else conflicts.push(`${a} put ${b} as their partner, but ${b} ${partner[b] ? "is already paired with " + partner[b] : "put " + claim[b]}. ${a} is in as a single for now.`);
+    }
+
+    const players = list.map(p => ({
+      name: p.name, skill: p.skill || 3, skillFlag: !p.skill, gender: p.gender, pref: p.pref, partner: partner[p.name] || null,
+    }));
+
+    const nPairs = Object.keys(partner).length / 2;
+    let head = `${players.length} players imported · ${nPairs} pair${nPairs === 1 ? "" : "s"}, ${players.length - 2 * nPairs} singles`;
+    const sk = Object.entries(skipped).map(([k, v]) => `${v} ${k}`);
+    if (sk.length) head += ` · skipped ${sk.join(", ")}`;
+    if (dupes) head += ` · merged ${dupes} duplicate sign-up${dupes === 1 ? "" : "s"}`;
+    notes.unshift({ level: "ok", text: head });
+    for (const p of unmatched) notes.push({ level: "warn", text: `${p.name}'s partner "${p.partnerText}" didn't match anyone who signed up, so they're in as a single. Pick their partner in the table if they're here.` });
+    conflicts.forEach(t => notes.push({ level: "warn", text: t }));
+    const noSkill = players.filter(p => p.skillFlag);
+    if (noSkill.length) notes.push({ level: "warn", text: `No readable skill level for ${noSkill.map(p => p.name).join(", ")}. Set to 3 for now, highlighted below.` });
+    const notedPairs = new Set();
+    for (const p of players) {
+      if (p.pref === "single" && p.gender === "X") notes.push({ level: "warn", text: `${p.name} asked for single-gender courts but didn't give their gender as male or female, so they'll go on mixed courts. Change it in the table if needed.` });
+      const q = p.partner && players.find(x => x.name === p.partner);
+      if (q && p.pref === "single" && q.gender !== p.gender && !notedPairs.has(q.name)) {
+        notedPairs.add(p.name);
+        notes.push({ level: "info", text: `${p.name} asked for single-gender courts but is paired with ${q.name}, so they'll play as a mixed pair.` });
+      }
+    }
+    return { players, notes, columns: cols };
+  }
+
+  // Fake Luma export for trying the app. Clearly example data.
+  function exampleCsv() {
+    const first = ["Alex","Jo","Sam","Priya","Tom","Ella","Ben","Maya","Jack","Zara","Oli","Grace","Harry","Aisha","Luke","Chloe","Dan","Sofia","Ryan","Isla","Kieran","Leah","Matt","Nina","Owen","Ruby","Josh","Freya","Callum","Hannah","Adam","Lily","Ethan","Amelia","Finn","Erin","George","Mia","Rob","Tara","Will","Katie","Euan","Holly","Jamie","Sara","Max","Eve","Noah","Rosie","Charlie","Imogen","Lewis","Anna"];
+    const last = ["Smith","Brown","Lee","Shah","Reed","Patel","Clark","Wood","Hughes","Khan","Green","Hall","Evans","Ali","Moore","King","Wright","Rossi","Hill","Scott","Murphy","Baker","Ward","Cole","Price","Hart","Bell","Grant","Fraser","Lloyd","Kerr","Dunn","Shaw","Jones","Burns","Walsh","Webb","Ford","Cook","Ross","Black","Day","Fox","Lane","Page","Rice","Stone","West","Young","Banks","Carr","Dean","Ellis","Gill"];
+    const fem = new Set(["Jo","Priya","Ella","Maya","Zara","Grace","Aisha","Chloe","Sofia","Isla","Leah","Nina","Ruby","Freya","Hannah","Lily","Amelia","Erin","Mia","Tara","Katie","Holly","Sara","Eve","Rosie","Imogen","Anna"]);
+    const rng = root.PadelEngine ? root.PadelEngine.makeRng(7) : Math.random;
+    const levels = ["1 - Beginner", "2 - Improver", "3 - Intermediate", "4 - Advanced", "5 - Competitive"];
+    const rows = [["api_id","name","first_name","last_name","email","approval_status","created_at","What's your uni email?","Skill level (1-5)","Gender","Mixed or single gender courts?","Partner (optional)"]];
+    const people = first.map((f, i) => ({ f, l: last[i] }));
+    const partnerOf = {};
+    const pairIdx = [[0,1],[2,6],[3,9],[4,8],[11,13],[14,16],[20,22],[30,32]];
+    pairIdx.forEach(([a, b]) => { partnerOf[a] = b; partnerOf[b] = a; });
+    people.forEach((p, i) => {
+      const g = p.f === "Charlie" ? "Non-binary" : fem.has(p.f) ? "Female" : "Male";
+      const lvl = levels[Math.min(4, Math.floor(rng() * rng() * 5 + rng() * 2.2))];
+      const pref = (fem.has(p.f) && i % 4 === 1) || i % 11 === 3 ? "Single gender courts only" : "Happy with mixed";
+      let partner = "";
+      if (partnerOf[i] != null) { const q = people[partnerOf[i]]; partner = i % 3 === 0 ? q.f : `${q.f} ${q.l}`; }
+      if (i === 25) partner = "Sammy Doyle";
+      if (i === 27) partner = "none";
+      if (i === 40) partner = "Hary Evans";
+      let status = "approved";
+      if (i >= 51) status = i === 53 ? "declined" : "waitlist";
+      const email = `${p.f}.${p.l}`.toLowerCase() + "@uni.example";
+      rows.push([`gst-${1000 + i}`, `${p.f} ${p.l}`, p.f, p.l, email, status, "2026-11-01T10:00:00Z", email, lvl, g, pref, partner]);
+    });
+    rows.push(["gst-2000", "Ben Clark", "Ben", "Clark", "ben.clark@uni.example", "approved", "2026-11-02T09:00:00Z", "ben.clark@uni.example", "3 - Intermediate", "Male", "Happy with mixed", ""]);
+    return rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(",")).join("\n");
+  }
+
+  root.PadelImport = { parseCSV, detectColumns, parseSkill, parseGender, parsePref, matchPartner, importSignups, exampleCsv };
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+
+<script id="draw">
+(function (root) {
+  "use strict";
+  // One drawing model, rendered to SVG (screen) and jsPDF (PDF). Units are abstract; the map is 1100 wide.
+  const C = {
+    ground: "#F3F5F9", navy: "#1E3D6B", court: "#2E6DB4", border: "#1F3F6D", line: "#FFFFFF", net: "#D9DDE3",
+    ball: "#F2CE3B", white: "#FFFFFF", ink: "#1B2430", grey: "#59616D", free: "#C4D6EC", hi: "#E4572E",
+  };
+  const MAP_W = 1100;
+  const TOP = 190;
+  const LAYOUT = {
+    3: { x: 56, y: TOP, w: 396, h: 198, land: true },
+    2: { x: 56, y: TOP + 380, w: 396, h: 198, land: true },
+    1: { x: 56, y: TOP + 760, w: 396, h: 198, land: true },
+    6: { x: 592, y: TOP, w: 198, h: 396, land: false },
+    7: { x: 846, y: TOP, w: 198, h: 396, land: false },
+    4: { x: 592, y: TOP + 562, w: 198, h: 396, land: false },
+    5: { x: 846, y: TOP + 562, w: 198, h: 396, land: false },
+  };
+  const R = 38;
+
+  function courtItems(items, L, teams, numbers, highlight) {
+    const { x, y, w, h, land } = L;
+    items.push({ t: "rect", x, y, w, h, fill: C.border });
+    items.push({ t: "rect", x: x + 8, y: y + 8, w: w - 16, h: h - 16, fill: C.court });
+    items.push({ t: "rect", x: x + 14, y: y + 14, w: w - 28, h: h - 28, stroke: C.line, lw: 3 });
+    if (land) {
+      [0.15, 0.85].forEach(f => items.push({ t: "line", x1: x + f * w, y1: y + 14, x2: x + f * w, y2: y + h - 14, stroke: C.line, lw: 3 }));
+      items.push({ t: "line", x1: x + 0.15 * w, y1: y + h / 2, x2: x + 0.85 * w, y2: y + h / 2, stroke: C.line, lw: 3 });
+      items.push({ t: "line", x1: x + w / 2, y1: y + 8, x2: x + w / 2, y2: y + h - 8, stroke: C.net, lw: 7 });
+    } else {
+      [0.15, 0.85].forEach(f => items.push({ t: "line", x1: x + 14, y1: y + f * h, x2: x + w - 14, y2: y + f * h, stroke: C.line, lw: 3 }));
+      items.push({ t: "line", x1: x + w / 2, y1: y + 0.15 * h, x2: x + w / 2, y2: y + 0.85 * h, stroke: C.line, lw: 3 });
+      items.push({ t: "line", x1: x + 8, y1: y + h / 2, x2: x + w - 8, y2: y + h / 2, stroke: C.net, lw: 7 });
+    }
+    if (!teams) {
+      items.push({ t: "text", x: x + w / 2, y: y + h / 2 + (land ? -14 : 12), s: "FREE", size: 34, bold: true, fill: C.free, anchor: "middle" });
+      return;
+    }
+    const spots = land
+      ? [[[0.265, 0.25], [0.265, 0.75]], [[0.735, 0.25], [0.735, 0.75]]]
+      : [[[0.25, 0.265], [0.75, 0.265]], [[0.25, 0.735], [0.75, 0.735]]];
+    teams.forEach((team, ti) => team.forEach((n, k) => {
+      const cx = x + spots[ti][k][0] * w, cy = y + spots[ti][k][1] * h;
+      const hi = n && highlight && highlight.has(n);
+      items.push({ t: "circle", cx, cy, r: R, fill: n ? (ti === 0 ? C.ball : C.white) : "#EEF1F5", stroke: hi ? C.hi : C.ink, lw: hi ? 7 : 3, dash: !n });
+      items.push({ t: "text", x: cx, y: cy + 12, s: n ? String(numbers[n]) : "?", size: 34, bold: true, fill: C.ink, anchor: "middle" });
+    }));
+  }
+
+  function wrapNumbers(nums, perLine) {
+    const out = [];
+    for (let i = 0; i < nums.length; i += perLine) out.push(nums.slice(i, i + perLine).join("  "));
+    return out;
+  }
+
+  function mapModel(s, b, opts) {
+    opts = opts || {};
+    const blk = s.blocks[b], next = s.blocks[b + 1], N = s.numbers, items = [];
+    const byCourt = {}, nextBy = {};
+    blk.games.forEach(g => { byCourt[g.court] = g.teams; });
+    if (next) next.games.forEach(g => { nextBy[g.court] = g.teams.flat().filter(Boolean).map(n => N[n]).sort((a, c) => a - c); });
+    const sitting = blk.sittingOut.map(n => N[n]).sort((a, c) => a - c);
+    const sitLines = wrapNumbers(sitting, 22);
+    const BOTTOM = TOP + 562 + 396;
+    const H = BOTTOM + 70 + 56 + sitLines.length * 36 + 30;
+
+    items.push({ t: "rect", x: 0, y: 0, w: MAP_W, h: H, fill: C.ground });
+    items.push({ t: "text", x: 56, y: 104, s: blk.time, size: 84, bold: true, fill: C.navy, anchor: "start" });
+    items.push({ t: "text", x: 1044, y: 66, s: "WEDNESDAY PADEL", size: 28, bold: true, fill: C.navy, anchor: "end" });
+    if (opts.dateLabel) items.push({ t: "text", x: 1044, y: 100, s: opts.dateLabel, size: 24, bold: false, fill: C.grey, anchor: "end" });
+    items.push({ t: "text", x: 1044, y: 132, s: `Block ${b + 1} of ${s.blocks.length}`, size: 24, bold: false, fill: C.grey, anchor: "end" });
+
+    for (const c of [3, 2, 1, 6, 7, 4, 5]) {
+      const L = LAYOUT[c];
+      items.push({ t: "text", x: L.x + L.w / 2, y: L.y - 18, s: `COURT ${c}`, size: 36, bold: true, fill: C.navy, anchor: "middle" });
+      courtItems(items, L, byCourt[c] || null, N, opts.highlight);
+      const below = L.y + L.h;
+      if (!next) {
+        items.push({ t: "text", x: L.x + L.w / 2, y: below + 32, s: byCourt[c] ? "Last game" : "", size: 24, bold: true, fill: C.grey, anchor: "middle" });
+      } else {
+        items.push({ t: "text", x: L.x + L.w / 2, y: below + 32, s: "Next on:", size: 24, bold: true, fill: C.grey, anchor: "middle" });
+        items.push({ t: "text", x: L.x + L.w / 2, y: below + 62, s: nextBy[c] ? nextBy[c].join(" ") : "Free", size: 27, bold: true, fill: C.navy, anchor: "middle" });
+      }
+    }
+    let y = BOTTOM + 70 + 44;
+    items.push({ t: "line", x1: 56, y1: y - 40, x2: 1044, y2: y - 40, stroke: "#D3DAE4", lw: 2 });
+    items.push({ t: "text", x: 56, y, s: sitting.length ? "Sitting out this block:" : "Nobody sitting out this block", size: 24, bold: true, fill: C.grey, anchor: "start" });
+    sitLines.forEach((ln, i) => items.push({ t: "text", x: 56, y: y + 36 * (i + 1), s: ln, size: 26, bold: true, fill: C.navy, anchor: "start" }));
+    return { w: MAP_W, h: H, items };
+  }
+
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  function toSVG(model, label) {
+    const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${model.w} ${model.h}" role="img" aria-label="${esc(label || "Court map")}" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">`];
+    for (const it of model.items) {
+      if (it.t === "rect") out.push(`<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" fill="${it.fill || "none"}"${it.stroke ? ` stroke="${it.stroke}" stroke-width="${it.lw}"` : ""}/>`);
+      else if (it.t === "line") out.push(`<line x1="${it.x1}" y1="${it.y1}" x2="${it.x2}" y2="${it.y2}" stroke="${it.stroke}" stroke-width="${it.lw}"/>`);
+      else if (it.t === "circle") out.push(`<circle cx="${it.cx}" cy="${it.cy}" r="${it.r}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.lw}"${it.dash ? ' stroke-dasharray="8 6"' : ""}/>`);
+      else if (it.t === "text" && it.s) out.push(`<text x="${it.x}" y="${it.y}" font-size="${it.size}" font-weight="${it.bold ? 700 : 400}" fill="${it.fill}" text-anchor="${it.anchor}">${esc(it.s)}</text>`);
+    }
+    out.push("</svg>");
+    return out.join("");
+  }
+
+  function hex(c) { const v = parseInt(c.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
+  function toPDF(doc, model, ox, oy, sc) {
+    for (const it of model.items) {
+      if (it.t === "rect") {
+        if (it.fill) doc.setFillColor(...hex(it.fill));
+        if (it.stroke) { doc.setDrawColor(...hex(it.stroke)); doc.setLineWidth(it.lw * sc); }
+        doc.rect(ox + it.x * sc, oy + it.y * sc, it.w * sc, it.h * sc, it.fill && it.stroke ? "FD" : it.fill ? "F" : "S");
+      } else if (it.t === "line") {
+        doc.setDrawColor(...hex(it.stroke)); doc.setLineWidth(it.lw * sc);
+        doc.line(ox + it.x1 * sc, oy + it.y1 * sc, ox + it.x2 * sc, oy + it.y2 * sc);
+      } else if (it.t === "circle") {
+        doc.setFillColor(...hex(it.fill)); doc.setDrawColor(...hex(it.stroke)); doc.setLineWidth(it.lw * sc);
+        if (it.dash) doc.setLineDashPattern([4 * sc * 2, 3 * sc * 2], 0);
+        doc.circle(ox + it.cx * sc, oy + it.cy * sc, it.r * sc, "FD");
+        if (it.dash) doc.setLineDashPattern([], 0);
+      } else if (it.t === "text" && it.s) {
+        doc.setFont("helvetica", it.bold ? "bold" : "normal");
+        doc.setFontSize(it.size * sc);
+        doc.setTextColor(...hex(it.fill));
+        doc.text(pdfSafe(it.s), ox + it.x * sc, oy + it.y * sc, { align: it.anchor === "middle" ? "center" : it.anchor === "end" ? "right" : "left" });
+      }
+    }
+  }
+  // Standard PDF fonts only cover Western European characters.
+  const EXTRA = { "Ł": "L", "ł": "l", "Đ": "D", "đ": "d", "Ħ": "H", "ħ": "h", "ı": "i", "Œ": "OE", "œ": "oe", "‘": "'", "“": '"', "”": '"' };
+  function pdfSafe(s) {
+    return String(s).normalize("NFC").replace(/[^\x20-\x7E -ÿ–’]/g, ch => {
+      if (EXTRA[ch]) return EXTRA[ch];
+      const base = ch.normalize("NFD").replace(/[̀-ͯ]/g, "");
+      return /^[\x20-\x7E]+$/.test(base) ? base : "?";
+    });
+  }
+
+  root.PadelDraw = { mapModel, toSVG, toPDF, pdfSafe, COLORS: C };
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+
+<script id="app">
+(function () {
+  "use strict";
+  const E = window.PadelEngine, I = window.PadelImport, D = window.PadelDraw;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const LS_KEY = "wednesday-padel-current";
+
+  function nextWednesday() {
+    const d = new Date();
+    d.setDate(d.getDate() + ((3 - d.getDay() + 7) % 7));
+    return d.toISOString().slice(0, 10);
+  }
+  function freshState() {
+    return { v: 1, settings: { date: nextWednesday(), courts: 7, start: "14:00", end: "16:00", block: 15, minMinutes: 60 },
+      players: [], notes: [], example: false, schedule: null, stale: false, changes: [], history: [] };
+  }
+  let state = freshState();
+  let ui = { tab: "signups", block: 0, mode: "map", highlight: new Set(), confirm: null, search: "" };
+  let nextId = 1;
+  const pid = () => "p" + (nextId++) + Math.random().toString(36).slice(2, 6);
+
+  // ------------------------------------------------------------ storage
+  let db = null, uid = null, downloads = null, mode = "device", dirty = false, saveTimer = null;
+  function setSaveState(text, cls) { const el = $("saveState"); el.textContent = text; el.className = "save-state " + (cls || ""); }
+  function serial() { const s = Object.assign({}, state); delete s.history; return JSON.stringify(s); }
+  function save() {
+    dirty = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      const json = serial();
+      try { localStorage.setItem(LS_KEY, json); } catch (e) { /* storage blocked */ }
+      if (db && uid) {
+        try { await db.doc(`data/users/${uid}/current`).set({ state: json, savedAt: Date.now() }); setSaveState("Saved to your account", "ok"); }
+        catch (e) { setSaveState("Couldn't save to your account", "bad"); }
+      } else setSaveState(mode === "device" ? "Saved on this device" : "Saved", "ok");
+    }, 600);
+  }
+  function adopt(json) {
+    try {
+      const s = JSON.parse(json);
+      if (!s || s.v !== 1) return false;
+      state = Object.assign(freshState(), s, { history: [] });
+      state.players.forEach(p => { if (!p.id) p.id = pid(); });
+      return true;
+    } catch (e) { return false; }
+  }
+  try { const j = localStorage.getItem(LS_KEY); if (j) { adopt(j); setSaveState("Saved on this device", "ok"); } } catch (e) { /* no storage */ }
+
+  async function connect() {
+    if (!window.claude || typeof window.claude.use !== "function") return;
+    try {
+      const [dbNs, userNs, dl] = await Promise.all([window.claude.use("db"), window.claude.use("user"), window.claude.use("downloads")]);
+      downloads = dl;
+      if (!dbNs || !userNs) return;
+      uid = await userNs.id();
+      if (!uid) return;
+      db = dbNs; mode = "account";
+      const snap = await Promise.race([db.doc(`data/users/${uid}/current`).get(), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000))]);
+      if (snap.exists && !dirty) {
+        const data = snap.data();
+        if (data && typeof data.state === "string" && adopt(data.state)) renderAll();
+      } else if (dirty) save();
+      setSaveState("Saved to your account", "ok");
+    } catch (e) {
+      if (db) setSaveState("Couldn't reach your account, saving on this device", "bad");
+    }
+  }
+
+  // ------------------------------------------------------------ helpers
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600);
+  }
+  async function copy(text, done) {
+    try { await navigator.clipboard.writeText(text); toast(done); }
+    catch (e) {
+      const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand("copy"); } catch (e2) { /* ignore */ }
+      ta.remove(); toast(ok ? done : "Couldn't copy. Select the text and copy it yourself.");
+    }
+  }
+  function blockCount() { try { return E.blockTimes(state.settings.start, state.settings.end, +state.settings.block).length; } catch (e) { return 0; } }
+  function minBlocks() { return Math.ceil(+state.settings.minMinutes / +state.settings.block); }
+  function dateLabel(iso) {
+    if (!iso) return "";
+    const d = new Date(iso + "T12:00:00");
+    return isNaN(d) ? iso : d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  }
+  function shortDate(iso) {
+    const d = new Date(iso + "T12:00:00");
+    return !iso || isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  }
+  function uniqueName(name, exceptId) {
+    let n = name, k = 2;
+    while (state.players.some(p => p.id !== exceptId && p.name.toLowerCase() === n.toLowerCase())) n = `${name} (${k++})`;
+    return n;
+  }
+  function byId(id) { return state.players.find(p => p.id === id); }
+  function enginePlayers() {
+    const out = {};
+    for (const p of state.players) {
+      const q = p.partner && byId(p.partner);
+      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref };
+    }
+    return out;
+  }
+  function playersChanged() {
+    if (state.schedule) state.stale = true;
+    save(); renderPlayers(); renderCapacity(); renderTabs();
+  }
+  function withFocus(fn) {
+    const id = document.activeElement && document.activeElement.id;
+    fn();
+    if (id) { const el = document.getElementById(id); if (el) el.focus(); }
+  }
+
+  // ------------------------------------------------------------ import
+  function doImport(text) {
+    const res = I.importSignups(text);
+    if (!res.players.length) { state.notes = res.notes; renderNotes(); return; }
+    state.players = res.players.map(p => Object.assign({ id: pid() }, p));
+    const idOf = {}; state.players.forEach(p => { idOf[p.name] = p.id; });
+    state.players.forEach(p => { p.partner = p.partner ? idOf[p.partner] : null; });
+    state.notes = res.notes; state.example = false;
+    if (state.schedule) state.stale = true;
+    $("pasteBox").value = "";
+    save(); renderAll();
+    toast(`Imported ${state.players.length} players`);
+  }
+  $("fileInput").addEventListener("change", e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => doImport(String(r.result));
+    r.readAsText(f);
+    e.target.value = "";
+  });
+  const dz = $("dropzone");
+  dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("over"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+  dz.addEventListener("drop", e => {
+    e.preventDefault(); dz.classList.remove("over");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) { const r = new FileReader(); r.onload = () => doImport(String(r.result)); r.readAsText(f); }
+  });
+  $("importPaste").addEventListener("click", () => doImport($("pasteBox").value));
+  $("loadExample").addEventListener("click", () => {
+    doImport(I.exampleCsv());
+    state.example = true;
+    state.notes.unshift({ level: "info", text: "These are made-up example sign-ups. Import your Luma CSV to replace them." });
+    save(); renderAll();
+  });
+
+  // ------------------------------------------------------------ rendering: sign-ups
+  function renderNotes() {
+    $("importNotes").innerHTML = state.notes.map(n => `<li class="${n.level === "warn" ? "warn" : n.level === "ok" ? "ok" : ""}">${esc(n.text)}</li>`).join("");
+  }
+
+  function renderSettings() {
+    const s = state.settings;
+    $("setDate").value = s.date; $("setCourts").value = s.courts; $("setStart").value = s.start; $("setEnd").value = s.end;
+    $("setBlock").value = String(s.block); $("setMin").value = s.minMinutes;
+    const line = `${s.start} to ${s.end} · ${s.courts} courts · ${s.block}-min blocks · everyone plays ${s.minMinutes}+ min`;
+    $("settingsSummary").textContent = "Session settings: " + line;
+    $("sessionLine").textContent = `${dateLabel(s.date) || "Date not set"} · ${s.start} to ${s.end}`;
+  }
+  [["setDate", "date"], ["setStart", "start"], ["setEnd", "end"]].forEach(([id, k]) => $(id).addEventListener("change", e => { state.settings[k] = e.target.value; save(); renderSettings(); renderCapacity(); }));
+  [["setCourts", "courts", 1, 7], ["setBlock", "block", 5, 60], ["setMin", "minMinutes", 0, 240]].forEach(([id, k, lo, hi]) => $(id).addEventListener("change", e => {
+    const v = Math.max(lo, Math.min(hi, Math.round(+e.target.value || lo)));
+    state.settings[k] = v; save(); renderSettings(); renderCapacity();
+  }));
+
+  function renderPlayers() {
+    const box = $("playersBox");
+    $("playersTitle").textContent = state.example ? "This week's players (example)" : "This week's players";
+    if (!state.players.length) {
+      box.innerHTML = `<div class="empty"><strong>No players yet</strong><span>Import the Luma CSV above. You can fix anything here afterwards.</span></div>`;
+      return;
+    }
+    const sorted = state.players.slice().sort((a, b) => E.byName(a.name, b.name));
+    const opts = sorted.map(p => [p.id, p.name]);
+    const rows = sorted.map(p => {
+      const sk = [1, 2, 3, 4, 5].map(k => `<button type="button" id="sk-${p.id}-${k}" data-act="skill" data-id="${p.id}" data-v="${k}" aria-pressed="${p.skill === k}" aria-label="Skill ${k}">${k}</button>`).join("");
+      const partner = `<select id="pt-${p.id}" data-act="partner" data-id="${p.id}" aria-label="Partner for ${esc(p.name)}"><option value="">Single (rotating partner)</option>${opts.filter(o => o[0] !== p.id).map(([id, n]) => `<option value="${id}"${p.partner === id ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+      const gender = `<select id="g-${p.id}" data-act="gender" data-id="${p.id}" aria-label="Gender for ${esc(p.name)}">${[["M", "Man"], ["F", "Woman"], ["X", "Other"]].map(([v, l]) => `<option value="${v}"${p.gender === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+      const pref = `<select id="pf-${p.id}" data-act="pref" data-id="${p.id}" aria-label="Court preference for ${esc(p.name)}"><option value="any"${p.pref !== "single" ? " selected" : ""}>Any court</option><option value="single"${p.pref === "single" ? " selected" : ""}>Single-gender</option></select>`;
+      return `<div class="prow${p.skillFlag ? " flag" : ""}">
+        <div class="c-name"><input type="text" id="nm-${p.id}" data-act="name" data-id="${p.id}" value="${esc(p.name)}" aria-label="Name">${p.skillFlag ? '<span class="pair-tag" style="color:var(--warn)">Check skill</span>' : ""}</div>
+        <div class="c-skill"><div class="skills" role="group" aria-label="Skill for ${esc(p.name)}">${sk}</div></div>
+        <div class="c-partner">${partner}</div>
+        <div class="c-gender">${gender}</div>
+        <div class="c-pref">${pref}</div>
+        <div class="c-del"><button type="button" class="icon-btn" id="del-${p.id}" data-act="del" data-id="${p.id}" aria-label="Remove ${esc(p.name)}">&times;</button></div>
+      </div>`;
+    }).join("");
+    box.innerHTML = `<div class="players"><div class="prow head"><span>Name</span><span>Skill</span><span>Partner</span><span>Gender</span><span>Courts</span><span></span></div>${rows}</div>`;
+  }
+
+  $("playersBox").addEventListener("click", e => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const p = byId(b.dataset.id);
+    if (!p) return;
+    if (b.dataset.act === "skill") { p.skill = +b.dataset.v; p.skillFlag = false; withFocus(playersChanged); }
+    if (b.dataset.act === "del") {
+      state.players.forEach(q => { if (q.partner === p.id) q.partner = null; });
+      state.players = state.players.filter(q => q !== p);
+      playersChanged(); toast(`Removed ${p.name}`);
+    }
+  });
+  $("playersBox").addEventListener("change", e => {
+    const el = e.target, p = byId(el.dataset.id);
+    if (!p) return;
+    const act = el.dataset.act;
+    if (act === "name") {
+      const v = el.value.replace(/\s+/g, " ").trim();
+      if (!v) { el.value = p.name; return; }
+      p.name = uniqueName(v, p.id);
+    } else if (act === "partner") {
+      const old = p.partner && byId(p.partner);
+      if (old) old.partner = null;
+      p.partner = null;
+      if (el.value) {
+        const q = byId(el.value);
+        const qOld = q.partner && byId(q.partner);
+        if (qOld) qOld.partner = null;
+        q.partner = p.id; p.partner = q.id;
+      }
+    } else if (act === "gender") p.gender = el.value;
+    else if (act === "pref") p.pref = el.value;
+    withFocus(playersChanged);
+  });
+  $("addForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const v = $("addName").value.replace(/\s+/g, " ").trim();
+    if (!v) return;
+    state.players.push({ id: pid(), name: uniqueName(v), skill: 3, skillFlag: true, gender: "X", pref: "any", partner: null });
+    $("addName").value = "";
+    playersChanged();
+    $("addName").focus();
+    toast(`Added ${v}. Set their skill and gender.`);
+  });
+
+  function capacityInfo() {
+    const n = state.players.length, nb = blockCount(), mb = minBlocks();
+    const max = E.maxPlayers(+state.settings.courts, nb, mb);
+    const pairs = state.players.filter(p => p.partner).length / 2;
+    const flags = state.players.filter(p => p.skillFlag).length;
+    return { n, max, pairs, singles: n - 2 * pairs, flags, nb };
+  }
+  function renderCapacity() {
+    const c = capacityInfo(), cap = $("capacity");
+    $("countBadge").textContent = c.n;
+    let main = `${c.n} player${c.n === 1 ? "" : "s"}`, sub, over = false, ok = c.n >= 4 && c.nb > 0;
+    if (!c.n) sub = "Import sign-ups to start";
+    else if (c.nb === 0) { sub = "Check the session times: no blocks fit."; ok = false; }
+    else if (c.n < 4) { sub = "Need at least 4 players."; }
+    else if (c.n > c.max) { over = true; ok = false; sub = `Max ${c.max} for everyone to get ${state.settings.minMinutes} min on ${state.settings.courts} courts. Remove ${c.n - c.max}.`; }
+    else {
+      sub = `${c.pairs} pair${c.pairs === 1 ? "" : "s"}, ${c.singles} single${c.singles === 1 ? "" : "s"} · max ${c.max} on ${state.settings.courts} courts`;
+      if (c.flags) sub += ` · ${c.flags} skill${c.flags === 1 ? "" : "s"} to check`;
+    }
+    $("capMain").textContent = main; $("capSub").textContent = sub;
+    cap.classList.toggle("over", over);
+    $("makeSchedule").disabled = !ok;
+    $("makeSchedule").textContent = state.schedule ? "Make schedule again" : "Make schedule";
+  }
+
+  function renderNewWeek() {
+    const box = $("newWeekBox");
+    if (ui.confirm === "newweek") {
+      box.innerHTML = `<div class="confirm"><span>Clear this week's players and schedule?</span><button class="btn danger" id="newWeekYes">Clear everything</button><button class="btn" id="newWeekNo">Cancel</button></div>`;
+      $("newWeekYes").onclick = () => { const s = state.settings; state = freshState(); state.settings.courts = s.courts; state.settings.start = s.start; state.settings.end = s.end; state.settings.block = s.block; state.settings.minMinutes = s.minMinutes; ui.confirm = null; save(); renderAll(); toast("Cleared. Import next week's sign-ups."); };
+      $("newWeekNo").onclick = () => { ui.confirm = null; renderNewWeek(); };
+    } else {
+      box.innerHTML = `<button class="btn danger" id="newWeek">Start a new week</button>`;
+      $("newWeek").onclick = () => { ui.confirm = "newweek"; renderNewWeek(); };
+    }
+  }
+
+  // ------------------------------------------------------------ schedule
+  function makeSchedule(seed) {
+    try {
+      state.schedule = E.generate(enginePlayers(), Object.assign({}, state.settings, { seed: seed == null ? null : seed, date: state.settings.date }));
+      state.stale = false; state.changes = []; state.history = [];
+      ui.block = 0; ui.highlight = new Set();
+      save(); setTab("schedule"); renderAll();
+      toast("Schedule made");
+    } catch (e) {
+      if (e instanceof E.PadelError) { state.notes = [{ level: "warn", text: e.message }].concat(state.notes.filter(n => n.level !== "warn" || !n.text.includes("playing slots"))); renderNotes(); toast("Couldn't make the schedule, see the message at the top"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+      else { console.error(e); toast("Something went wrong making the schedule"); }
+    }
+  }
+  function makeWithBusy(btn) {
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Making...";
+    setTimeout(() => { makeSchedule(null); btn.disabled = false; btn.textContent = label; renderCapacity(); }, 30);
+  }
+  $("makeSchedule").addEventListener("click", e => makeWithBusy(e.currentTarget));
+
+  function renderSchedule() {
+    const s = state.schedule;
+    $("schedEmpty").hidden = !!s; $("schedBody").hidden = !s;
+    if (!s) return;
+    $("staleBanner").hidden = !state.stale;
+    $("schedMeta").textContent = `${dateLabel(s.settings.date)} · ${Object.keys(s.players).length} players · ${s.settings.courtsUsed} courts`;
+    if (ui.block >= s.blocks.length) ui.block = 0;
+    $("blockPicker").innerHTML = s.blocks.map((b, i) => `<button type="button" id="blk-${i}" data-b="${i}" aria-pressed="${i === ui.block}">${b.time}</button>`).join("");
+    $("viewMap").setAttribute("aria-pressed", ui.mode === "map"); $("viewList").setAttribute("aria-pressed", ui.mode === "list");
+    $("mapBox").hidden = ui.mode !== "map"; $("listBox").hidden = ui.mode !== "list";
+    const blk = s.blocks[ui.block];
+    if (ui.mode === "map") {
+      $("mapBox").innerHTML = D.toSVG(D.mapModel(s, ui.block, { highlight: ui.highlight, dateLabel: shortDate(s.settings.date) }), `Courts at ${blk.time}`);
+    } else {
+      const N = s.numbers;
+      const nm = (x, cls) => (x ? `<span class="chip-n ${cls}">${N[x]}</span>${esc(x)}` : `<b style="color:var(--warn)">needs 1 player</b>`);
+      $("listBox").innerHTML = blk.games.map(g => `<div class="g"><span class="c">C${g.court}</span><span>${g.teams[0].map(x => nm(x, "y")).join(" & ")}<span class="vs">vs</span>${g.teams[1].map(x => nm(x, "w")).join(" & ")}</span></div>`).join("")
+        + (blk.sittingOut.length ? `<div class="sit"><b>Sitting out:</b> ${blk.sittingOut.map(x => `${N[x]} ${esc(x)}`).join(", ")}</div>` : "");
+    }
+    renderShuffle(); renderDrop(); renderChanges(); renderSummary(); renderIndex();
+  }
+  $("blockPicker").addEventListener("click", e => { const b = e.target.closest("[data-b]"); if (!b) return; ui.block = +b.dataset.b; withFocus(renderSchedule); });
+  $("viewMap").addEventListener("click", () => { ui.mode = "map"; renderSchedule(); });
+  $("viewList").addEventListener("click", () => { ui.mode = "list"; renderSchedule(); });
+
+  function renderShuffle() {
+    const box = $("shuffleBox");
+    if (ui.confirm === "shuffle") {
+      box.innerHTML = `<span class="confirm"><span>Everyone's slots will change${state.stale ? " and the new player list is used" : ""}.</span><button class="btn danger" id="shufYes">Shuffle</button><button class="btn" id="shufNo">Cancel</button></span>`;
+      $("shufYes").onclick = e => { ui.confirm = null; makeWithBusy(e.currentTarget); };
+      $("shufNo").onclick = () => { ui.confirm = null; renderShuffle(); };
+    } else {
+      box.innerHTML = `<button class="btn" id="shuffle">Shuffle again</button>`;
+      $("shuffle").onclick = () => { ui.confirm = "shuffle"; renderShuffle(); };
+    }
+  }
+
+  function renderDrop() {
+    const s = state.schedule, N = s.numbers;
+    const active = Object.keys(s.players).filter(n => s.players[n].droppedFrom == null).sort(E.byName);
+    const keepWho = $("dropWho").value;
+    $("dropWho").innerHTML = `<option value="">Who dropped out?</option>` + active.map(n => `<option value="${esc(n)}"${n === keepWho ? " selected" : ""}>${N[n]}. ${esc(n)}</option>`).join("");
+    const keepFrom = $("dropFrom").value;
+    $("dropFrom").innerHTML = `<option value="">Whole session</option>` + s.blocks.slice(1).map(b => `<option value="${b.time}"${b.time === keepFrom ? " selected" : ""}>From ${b.time}</option>`).join("");
+  }
+  $("dropApply").addEventListener("click", () => {
+    const s = state.schedule, who = $("dropWho").value, from = $("dropFrom").value || null;
+    if (!s || !who) { toast("Pick who dropped out first"); return; }
+    state.history.push(JSON.stringify({ schedule: s, changes: state.changes }));
+    if (state.history.length > 10) state.history.shift();
+    try {
+      const ch = E.dropPlayers(s, [who], from, Date.now() % 100000);
+      state.changes.push({ who, from, list: ch });
+      ui.highlight = new Set(ch.map(c => c.in).filter(Boolean));
+      const firstChanged = ch.length ? s.blocks.findIndex(b => b.time === ch[0].time) : -1;
+      if (firstChanged >= 0) ui.block = firstChanged;
+      save(); renderSchedule();
+      toast(ch.length ? `${who} replaced in ${ch.length} slot${ch.length === 1 ? "" : "s"}` : `${who} wasn't due on court, nothing to change`);
+    } catch (e) { state.history.pop(); toast(e.message || "Couldn't apply that"); }
+  });
+  function changesText() {
+    const N = state.schedule.numbers, out = [];
+    for (const g of state.changes) {
+      out.push(`*Changes (${g.who} out${g.from ? " from " + g.from : ""})*`);
+      if (!g.list.length) out.push("No court changes needed.");
+      for (const c of g.list) out.push(c.in ? `${c.time} C${c.court}: ${c.in} (${N[c.in]}) in for ${c.out}` : `${c.time} C${c.court}: a player short (${c.out} out), anyone free please join`);
+      out.push("");
+    }
+    return out.join("\n").trim();
+  }
+  function renderChanges() {
+    $("changesBox").hidden = !state.changes.length;
+    if (state.changes.length) $("changesText").textContent = changesText();
+  }
+  $("copyChanges").addEventListener("click", () => copy(changesText(), "Changes copied"));
+  $("undoDrop").addEventListener("click", () => {
+    const last = state.history.pop();
+    if (!last) {
+      toast("Nothing to undo in this visit");
+      return;
+    }
+    const prev = JSON.parse(last);
+    state.schedule = prev.schedule; state.changes = prev.changes; ui.highlight = new Set();
+    save(); renderSchedule(); toast("Undone");
+  });
+
+  function renderSummary() {
+    const m = E.summary(state.schedule), set = state.schedule.settings;
+    const stats = [
+      [m.ok ? "good" : "bad", "Play time", `${m.minMinutes}+ min each`, m.ok ? `Everyone gets ${set.minMinutes} min or more (${m.minBlocks} to ${m.maxBlocks} blocks)` : `Someone is under ${set.minMinutes} min`],
+      ["", "Skill match", `±${m.avgGap.toFixed(2)}`, `Average gap between teams, biggest ${m.maxGap.toFixed(1)}. Widest game spread ${m.maxSpread}.`],
+      ["", "Repeat opponents", String(m.repeatOpponents), "Pairs of players who meet more than once as opponents"],
+      [m.repeatPartners ? "bad" : "good", "Repeat partners", String(m.repeatPartners), "Singles who get the same partner twice"],
+    ];
+    if (m.genderGames) {
+      const miss = m.genderMisses.slice(0, 6).map(x => `${x.name} ${x.time} C${x.court}`).join(", ");
+      stats.push([m.genderMisses.length ? "bad" : "good", "Single-gender", `${m.genderMet} of ${m.genderGames} games`,
+        m.genderMisses.length ? `On a mixed court: ${miss}${m.genderMisses.length > 6 ? "..." : ""}. The numbers didn't allow it without cutting play time.` : "Every single-gender request is met"]);
+    }
+    if (m.shortGames) stats.push(["bad", "Short games", String(m.shortGames), "Games missing a player after dropouts"]);
+    $("summaryBox").innerHTML = stats.map(([cls, k, v, d]) => `<div class="stat ${cls}"><span class="k">${k}</span><span class="v">${esc(v)}</span><span class="d">${esc(d)}</span></div>`).join("");
+  }
+
+  function renderIndex() {
+    const s = state.schedule, N = s.numbers, slots = E.playerSlots(s), first = s.blocks[0].time;
+    const q = ui.search.trim().toLowerCase();
+    const names = Object.keys(s.players).sort(E.byName).filter(n => s.players[n].droppedFrom !== first)
+      .filter(n => !q || n.toLowerCase().includes(q) || String(N[n]) === q);
+    $("indexBox").innerHTML = names.map(n => {
+      const d = s.players[n].droppedFrom;
+      const t = slots[n].map(x => `${x.time} C${x.court}`).join(" · ") || "not playing";
+      return `<div><span class="n">${N[n]}</span><span>${esc(n)}<br><span class="t">${t}</span>${d ? ` <span class="t out">out from ${d}</span>` : ""}</span></div>`;
+    }).join("") || `<span class="hint">Nobody matches "${esc(ui.search)}"</span>`;
+  }
+  $("indexSearch").addEventListener("input", e => { ui.search = e.target.value; renderIndex(); });
+  $("copyText").addEventListener("click", () => copy(E.renderText(state.schedule), "Schedule copied as text"));
+  $("gotoSignups").addEventListener("click", () => setTab("signups"));
+
+  // ------------------------------------------------------------ PDF
+  function buildPdf(s) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+    const PW = 595.28, PH = 841.89, M = 24;
+    const label = dateLabel(s.settings.date);
+    s.blocks.forEach((blk, b) => {
+      if (b) doc.addPage("a4", "portrait");
+      const model = D.mapModel(s, b, { dateLabel: shortDate(s.settings.date) });
+      const sc = Math.min((PW - 2 * M) / model.w, (PH - 2 * M - 30) / model.h);
+      doc.setFillColor(...[243, 245, 249]); doc.rect(0, 0, PW, PH, "F");
+      D.toPDF(doc, model, (PW - model.w * sc) / 2, M, sc);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(89, 97, 109);
+      doc.text("Find your number on the last page", PW / 2, PH - 22, { align: "center" });
+    });
+    // Index pages
+    const N = s.numbers, slots = E.playerSlots(s), first = s.blocks[0].time;
+    const names = Object.keys(s.players).sort(E.byName).filter(n => s.players[n].droppedFrom !== first);
+    const colW = (PW - 2 * 36 - 24) / 2, top = 96, bottom = PH - 40;
+    let col = 0, y = top;
+    const newPage = (cont) => {
+      doc.addPage("a4", "portrait");
+      doc.setFillColor(243, 245, 249); doc.rect(0, 0, PW, PH, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(24); doc.setTextColor(30, 61, 107);
+      doc.text(cont ? "WHO PLAYS WHEN (CONTINUED)" : "WHO PLAYS WHEN", 36, 58);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(89, 97, 109);
+      doc.text(`${label}  ·  ${s.settings.start} to ${s.settings.end}  ·  C = court`, 36, 76);
+      col = 0; y = top;
+    };
+    newPage(false);
+    for (const n of names) {
+      const d = s.players[n].droppedFrom;
+      let t = slots[n].map(x => `${x.time} C${x.court}`).join("  ·  ") || "not playing";
+      if (d) t += `  (out from ${d})`;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+      const tl = doc.splitTextToSize(D.pdfSafe(t), colW - 26);
+      const h = 13 + tl.length * 10.5 + 6;
+      if (y + h > bottom) { if (col === 0) { col = 1; y = top; } else newPage(true); }
+      const x = 36 + col * (colW + 24);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(30, 61, 107);
+      doc.text(String(N[n]), x + 18, y + 10, { align: "right" });
+      doc.setTextColor(27, 36, 48);
+      doc.text(D.pdfSafe(n), x + 26, y + 10);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(89, 97, 109);
+      doc.text(tl, x + 26, y + 22);
+      doc.setDrawColor(214, 222, 233); doc.setLineWidth(0.5); doc.line(x, y + h - 3, x + colW, y + h - 3);
+      y += h;
+    }
+    return doc;
+  }
+  $("savePdf").addEventListener("click", async () => {
+    const s = state.schedule;
+    if (!s) return;
+    if (!window.jspdf) { toast("The PDF tool didn't load. Check your internet connection and reload."); return; }
+    const filename = `padel-${s.settings.date || "schedule"}.pdf`;
+    let blob;
+    try { blob = buildPdf(s).output("blob"); } catch (e) { console.error(e); toast("Couldn't build the PDF"); return; }
+    if (downloads) {
+      try { await downloads.save({ filename, data: blob }); toast("PDF saved"); return; }
+      catch (e) {
+        if (e && e.code === "declined") { toast("Save cancelled"); return; }
+        if (e && e.code === "rate_limited") { toast("A save is already open, finish that first"); return; }
+      }
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("PDF downloading");
+  });
+
+  // ------------------------------------------------------------ tabs + boot
+  function setTab(t) { ui.tab = t; renderTabs(); window.scrollTo({ top: 0 }); }
+  function renderTabs() {
+    $("tab-signups").setAttribute("aria-selected", ui.tab === "signups");
+    $("tab-schedule").setAttribute("aria-selected", ui.tab === "schedule");
+    $("view-signups").hidden = ui.tab !== "signups";
+    $("view-schedule").hidden = ui.tab !== "schedule";
+  }
+  $("tab-signups").addEventListener("click", () => setTab("signups"));
+  $("tab-schedule").addEventListener("click", () => { setTab("schedule"); renderSchedule(); });
+
+  function renderAll() {
+    renderSettings(); renderNotes(); renderPlayers(); renderCapacity(); renderNewWeek(); renderTabs(); renderSchedule();
+  }
+  if (state.schedule) ui.tab = "schedule";
+  renderAll();
+  connect();
+})();
+</script>
