@@ -162,6 +162,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 .prow.flag .skills { box-shadow: 0 0 0 1.5px var(--warn); }
 .icon-btn { width: 30px; height: 30px; border-radius: 50%; border: 0; background: none; cursor: pointer; color: var(--faint); font-size: 20px; line-height: 1; }
 .icon-btn:hover { background: var(--warn-bg); color: var(--warn); }
+.group-tag { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.group-tag .linkish { font-size: 12px; margin-left: 4px; }
 .pair-tag { font-size: 11px; font-weight: 600; color: var(--tint); text-transform: uppercase; letter-spacing: .05em; }
 .add-row { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
 
@@ -374,6 +376,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   const W_OPP = 1.5;      // per previous meeting as opponents today
   const W_PART = 6.0;     // per previous time two singles partnered today
   const W_GENDER = 10.0;  // per other-gender player in a game, for each single-gender player in it
+  const W_FRIEND = 6.0;   // bonus per pair of friend-group members on the same court (until they've shared 2 games)
+  const W_FRIEND_PART = 8.0; // bonus when two friend-group singles partner up (repeat-partner cost still applies)
+  const FRIEND_TARGET = 2;
   const DROP_EXTRA_GAME = 0.6;
   const RESTARTS = 2, MAX_ATTEMPTS = 20;
 
@@ -462,6 +467,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const selPairs = pairs.slice(0, bestK).map(x => x[1]);
     const selSingles = singles.slice(0, s).map(x => x[1]);
     const rest = singles.slice(s).map(x => x[1]);
+    const pairsRest = pairs.slice(bestK).map(x => x[1]);
 
     // Nudge the draw (only swapping people with equal games so fairness is untouched)
     // so single-gender players can be grouped in fours.
@@ -486,12 +492,31 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         d = best.nd;
       }
     }
+    // Bring group-mates on in the same block while their group still wants court time together
+    // (again only swapping people with equal games).
+    if (ctx.anyGroup) {
+      const grp = ctx.group;
+      const selNames = () => selPairs.flat().concat(selSingles);
+      const needy = new Set(selNames().map(n => grp[n]).filter(gid => gid && (hist.groupShared.get(gid) || 0) < FRIEND_TARGET));
+      for (const gid of needy) {
+        for (const u of pairsRest.filter(u => grp[u[0]] === gid)) {
+          const i = selPairs.findIndex(v => !grp[v[0]] && !must(v[0]) && hist.games[v[0]] === hist.games[u[0]]);
+          if (i >= 0) { const v = selPairs[i]; selPairs[i] = u; pairsRest[pairsRest.indexOf(u)] = v; }
+        }
+        for (const n of rest.filter(x => grp[x] === gid)) {
+          const before = ctx.anySingle ? genderDeficit(selNames(), ctx) : 0;
+          const i = selSingles.findIndex(v => !grp[v] && !must(v) && hist.games[v] === hist.games[n] &&
+            (!ctx.anySingle || genderDeficit(selNames().map(x => (x === v ? n : x)), ctx) <= before));
+          if (i >= 0) { const v = selSingles[i]; selSingles[i] = n; rest[rest.indexOf(n)] = v; }
+        }
+      }
+    }
     return [selPairs, selSingles];
   }
 
   function optimise(fixedPairs, singles, ctx, hist, rng) {
-    const { skill, gender, single, anySingle } = ctx;
-    const opp = hist.opp, part = hist.part;
+    const { skill, gender, single, anySingle, group, anyGroup } = ctx;
+    const opp = hist.opp, part = hist.part, together = hist.together;
     const g = (m, k) => m.get(k) || 0;
     let best = null;
     for (let r = 0; r < RESTARTS; r++) {
@@ -517,6 +542,20 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         if (anySingle) {
           const ps = [a0, a1, b0, b1];
           for (const x of ps) if (single[x]) for (const y of ps) if (gender[y] !== gender[x]) c += W_GENDER;
+        }
+        if (anyGroup) {
+          const ps = [a0, a1, b0, b1];
+          for (let i = 0; i < 4; i++) {
+            const gx = group[ps[i]];
+            if (!gx) continue;
+            for (let j = i + 1; j < 4; j++) {
+              if (group[ps[j]] !== gx) continue;
+              const fixedMates = (i === 0 && j === 1 && fixed[games[gi][0]]) || (i === 2 && j === 3 && fixed[games[gi][1]]);
+              if (!fixedMates && g(together, key(ps[i], ps[j])) < FRIEND_TARGET) c -= W_FRIEND;
+            }
+          }
+          if (!fixed[games[gi][0]] && group[a0] && group[a0] === group[a1]) c -= W_FRIEND_PART;
+          if (!fixed[games[gi][1]] && group[b0] && group[b0] === group[b1]) c -= W_FRIEND_PART;
         }
         return c;
       };
@@ -563,15 +602,17 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   function makeCtx(players) {
     const names = Object.keys(players);
-    const skill = {}, gender = {}, single = {};
-    let anySingle = false;
+    const skill = {}, gender = {}, single = {}, group = {};
+    let anySingle = false, anyGroup = false;
     for (const n of names) {
       skill[n] = players[n].skill;
       gender[n] = players[n].gender || "X";
       single[n] = wantsSingle(players, n);
       if (single[n]) anySingle = true;
+      group[n] = players[n].group || null;
+      if (group[n]) anyGroup = true;
     }
-    return { names, skill, gender, single, anySingle };
+    return { names, skill, gender, single, anySingle, group, anyGroup };
   }
 
   function generateOnce(players, courtsUsed, times, minBlocks, rng) {
@@ -584,9 +625,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const u = p && players[p] ? [n, p] : [n];
       units.push(u); u.forEach(x => seen.add(x));
     }
-    const hist = { games: {}, streak: {}, opp: new Map(), part: new Map() };
+    const hist = { games: {}, streak: {}, opp: new Map(), part: new Map(), together: new Map(), groupShared: new Map() };
     names.forEach(n => { hist.games[n] = 0; hist.streak[n] = 0; });
-    const nCand = ctx.anySingle ? 8 : 4;
+    const nCand = ctx.anySingle || ctx.anyGroup ? 8 : 4;
     const blocks = [];
     times.forEach((t, b) => {
       let best = null;
@@ -603,7 +644,16 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         for (const x of gm.ta) for (const y of gm.tb) hist.opp.set(key(x, y), (hist.opp.get(key(x, y)) || 0) + 1);
         if (!gm.fa) hist.part.set(key(gm.ta[0], gm.ta[1]), (hist.part.get(key(gm.ta[0], gm.ta[1])) || 0) + 1);
         if (!gm.fb) hist.part.set(key(gm.tb[0], gm.tb[1]), (hist.part.get(key(gm.tb[0], gm.tb[1])) || 0) + 1);
-        gm.ta.concat(gm.tb).forEach(x => playing.add(x));
+        const ps = gm.ta.concat(gm.tb);
+        for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) hist.together.set(key(ps[i], ps[j]), (hist.together.get(key(ps[i], ps[j])) || 0) + 1);
+        ps.forEach(x => playing.add(x));
+        if (ctx.anyGroup) {
+          const gids = new Set(ps.map(x => ctx.group[x]).filter(Boolean));
+          for (const gid of gids) {
+            const mem = ps.filter(x => ctx.group[x] === gid);
+            if (mem.length >= 2 && !(mem.length === 2 && players[mem[0]].partner === mem[1])) hist.groupShared.set(gid, (hist.groupShared.get(gid) || 0) + 1);
+          }
+        }
       });
       for (const n of names) {
         if (playing.has(n)) { hist.games[n]++; hist.streak[n] = 0; } else hist.streak[n]++;
@@ -621,7 +671,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return out;
   }
 
-  // players: {name: {skill 1-5, partner name|null, gender "M"|"F"|"X", pref "single"|"any"}}
+  // players: {name: {skill 1-5, partner name|null, gender "M"|"F"|"X", pref "single"|"any", group id|null}}
   function generate(players, opts) {
     opts = Object.assign({ courts: 7, start: "14:00", end: "16:00", block: 15, minMinutes: 60, seed: null, date: "" }, opts || {});
     const times = blockTimes(opts.start, opts.end, +opts.block);
@@ -641,7 +691,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     }
     if (attempt === MAX_ATTEMPTS) throw new PadelError(`Couldn't find a schedule giving everyone ${opts.minMinutes} minutes. Try Shuffle again.`);
     const pl = {};
-    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any" };
+    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any", group: players[n].group || null };
     return {
       settings: { courts: +opts.courts, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
       players: pl,
@@ -743,7 +793,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const [ta, tb] = gm.teams;
       if (ta.includes(null) || tb.includes(null)) { short++; continue; }
       for (const x of ta) for (const y of tb) opp.set(key(x, y), (opp.get(key(x, y)) || 0) + 1);
-      for (const t of [ta, tb]) if (P[t[0]].partner !== t[1]) part.set(key(t[0], t[1]), (part.get(key(t[0], t[1])) || 0) + 1);
+      for (const t of [ta, tb]) if (P[t[0]].partner !== t[1] && !(P[t[0]].group && P[t[0]].group === P[t[1]].group)) part.set(key(t[0], t[1]), (part.get(key(t[0], t[1])) || 0) + 1);
       const sk = ta.concat(tb).map(x => P[x].skill);
       gaps.push(Math.abs(sk[0] + sk[1] - sk[2] - sk[3]) / 2);
       spreads.push(Math.max(...sk) - Math.min(...sk));
@@ -767,8 +817,34 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       repeatOpponents: repOpp, repeatPartners: repPart,
       avgGap: gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0,
       maxGap: gaps.length ? Math.max(...gaps) : 0, maxSpread: spreads.length ? Math.max(...spreads) : 0,
-      shortGames: short, genderGames: gGames, genderMet: gMet, genderMisses: gMisses,
+      shortGames: short, genderGames: gGames, genderMet: gMet, genderMisses: gMisses, groups: groupSummary(s),
     };
+  }
+
+  // For each friend group: games where 2+ members shared a court (beyond a fixed pair), and friend partnerships.
+  function groupSummary(s) {
+    const P = s.players, byGroup = {};
+    for (const n in P) if (P[n].group && P[n].droppedFrom == null) (byGroup[P[n].group] = byGroup[P[n].group] || []).push(n);
+    const out = [];
+    for (const id in byGroup) {
+      const members = byGroup[id];
+      if (members.length < 2) continue;
+      let shared = 0;
+      const partners = {};
+      for (const blk of s.blocks) for (const gm of blk.games) {
+        const ps = gamePlayers(gm).filter(x => P[x].group === id);
+        const fixedOnly = ps.length === 2 && P[ps[0]].partner === ps[1];
+        if (ps.length >= 2 && !fixedOnly) shared++;
+        for (const t of gm.teams) {
+          if (t[0] && t[1] && P[t[0]].group === id && P[t[1]].group === id && P[t[0]].partner !== t[1]) {
+            const k = [t[0], t[1]].sort(byName).join(" & ");
+            partners[k] = (partners[k] || 0) + 1;
+          }
+        }
+      }
+      out.push({ id, members: members.sort(byName), shared, partners });
+    }
+    return out;
   }
 
   function playerSlots(s) {
@@ -832,30 +908,47 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   const clean = s => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
 
-  function detectColumns(headers) {
+  const PREF_VALUE = /^(mixed|single|same)\b/i;
+  function detectColumns(headers, rows) {
     const h = headers.map(x => clean(x).toLowerCase());
     const find = (pred, not = []) => h.findIndex((x, i) => !not.includes(i) && pred(x));
-    const pref = find(x => /mixed|court/.test(x));
     const status = find(x => x === "approval_status" || /approval|status/.test(x));
-    const skill = find(x => /skill|level|ability|standard/.test(x), [pref]);
+    let pref = find(x => /mixed|court|single.?gender|same.?gender/.test(x));
+    if (pref < 0 && rows && rows.length) {
+      // fall back to the column whose answers are mostly "Mixed" / "Single Gender"
+      let best = -1, bestShare = 0;
+      h.forEach((_, i) => {
+        const vals = rows.map(r => clean(r[i])).filter(Boolean);
+        if (vals.length < 2) return;
+        const share = vals.filter(v => PREF_VALUE.test(v)).length / vals.length;
+        if (share > bestShare) { bestShare = share; best = i; }
+      });
+      if (bestShare >= 0.6) pref = best;
+    }
+    if (pref < 0) pref = find(x => /\bplay\b/.test(x) && !/partner|played/.test(x));
+    const skill = find(x => /skill|level|ability|standard/.test(x) && x !== "ticket_name", [pref]);
     const gender = find(x => /gender|\bsex\b/.test(x), [pref]);
     const partner = find(x => /partner|pair/.test(x), [pref]);
     let email = find(x => /uni/.test(x) && /e-?mail/.test(x));
     if (email < 0) email = find(x => /e-?mail/.test(x));
+    const username = find(x => x === "id" || /user.?name/.test(x), [partner]);
     let name = find(x => x === "name" || x === "full name" || x === "full_name");
     if (name < 0) name = find(x => /\bname\b/.test(x) && !/first|last|partner|user|ticket/.test(x), [partner]);
     const first = find(x => /first.?name/.test(x)), last = find(x => /last.?name|surname/.test(x));
-    return { name, first, last, email, skill, gender, pref, partner, status };
+    const ex = partner >= 0 ? /e\.?\s?g\.?,?\s*([a-z]{1,6}\d{1,6})\b/i.exec(clean(headers[partner])) : null;
+    return { name, first, last, email, username, skill, gender, pref, partner, status, example: ex ? ex[1].toLowerCase() : null };
   }
 
   function parseSkill(v) {
     const s = clean(v).toLowerCase();
     const m = /[1-5]/.exec(s);
     if (m) return +m[0];
+    const lower = /\blow(er)?\b/.test(s), higher = /\b(high(er)?|upper)\b/.test(s);
     if (/beginn|new|never/.test(s)) return 1;
     if (/improv|casual/.test(s)) return 2;
-    if (/intermed/.test(s)) return 3;
-    if (/advanc|good|strong/.test(s)) return 4;
+    if (/intermed/.test(s)) return lower ? 2 : 3;
+    if (/advanc/.test(s)) return higher ? 5 : 4;
+    if (/good|strong/.test(s)) return 4;
     if (/expert|compet|elite/.test(s)) return 5;
     return null;
   }
@@ -912,14 +1005,47 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return undefined;
   }
 
-  // Luma CSV text -> {players:[{name, skill, skillFlag, gender, pref, partner}], notes:[{level, text}], columns}
+  const USER = /^[a-z]{1,6}\d{1,6}$/i;
+
+  // Optimal-string-alignment distance: a swapped pair of characters counts as 1.
+  function osa(a, b) {
+    const d = [];
+    for (let i = 0; i <= a.length; i++) { d[i] = [i]; }
+    for (let j = 0; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+    return d[a.length][b.length];
+  }
+
+  // "JM3553, HP809" / "HJHF20 and AB4236" / "MT2319 JM3569" / "Maya, Ollie carne" -> pieces
+  function splitPartners(text) {
+    const t = clean(text);
+    if (!t || NONE.test(t.toLowerCase().replace(/[.!]/g, ""))) return [];
+    const out = [];
+    for (const chunk of t.split(/\s*(?:,|;|\/|&|\+|\n|\band\b|\bor\b)\s*/i)) {
+      const c = clean(chunk);
+      if (!c || NONE.test(c.toLowerCase())) continue;
+      const toks = c.split(" ");
+      if (toks.length > 1 && toks.every(x => USER.test(x))) out.push(...toks); else out.push(c);
+    }
+    return out;
+  }
+
+  const titleWord = w => (w && w === w.toLowerCase() && /[a-z]/.test(w[0]) ? w[0].toUpperCase() + w.slice(1) : w);
+  const tidyName = n => clean(n).split(" ").map(titleWord).join(" ");
+  const listNames = arr => (arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1]);
+
+  // Luma CSV text -> {players:[{name, skill, skillFlag, gender, pref, partner, group}], groups, notes:[{level, text}], columns}
   function importSignups(text) {
     const rows = parseCSV(text);
-    if (!rows.length) return { players: [], notes: [{ level: "warn", text: "Nothing to import: the file or box is empty." }] };
-    const cols = detectColumns(rows[0]);
+    if (!rows.length) return { players: [], groups: [], notes: [{ level: "warn", text: "Nothing to import: the file or box is empty." }] };
+    const cols = detectColumns(rows[0], rows.slice(1));
     const notes = [];
     if (cols.name < 0 && cols.first < 0) {
-      return { players: [], notes: [{ level: "warn", text: "Couldn't find a name column. Make sure you include the header row from the Luma CSV." }] };
+      return { players: [], groups: [], notes: [{ level: "warn", text: "Couldn't find a name column. Make sure you include the header row from the Luma CSV." }] };
     }
     const missing = [];
     if (cols.skill < 0) missing.push("skill level");
@@ -936,6 +1062,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       let name = get(r, cols.name);
       if (!name) name = clean(get(r, cols.first) + " " + get(r, cols.last));
       if (!name) continue;
+      name = tidyName(name);
       const status = get(r, cols.status).toLowerCase();
       if (cols.status >= 0 && status && status !== "approved" && status !== "going" && status !== "checked_in") {
         const label = { pending_approval: "pending", waitlist: "waitlist", declined: "declined", invited: "invited (not registered)" }[status] || status.replace(/_/g, " ");
@@ -943,13 +1070,17 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         continue;
       }
       const email = get(r, cols.email).toLowerCase();
+      const users = new Set();
+      if (email.includes("@")) users.add(email.split("@")[0]);
+      const uid = get(r, cols.username).toLowerCase();
+      if (uid) users.add(uid);
       const k = email || name.toLowerCase();
       if (byKey.has(k)) dupes++;
       byKey.set(k, {
-        name, rawSkill: get(r, cols.skill), skill: parseSkill(get(r, cols.skill)),
+        name, skill: parseSkill(get(r, cols.skill)),
         gender: cols.gender >= 0 ? parseGender(get(r, cols.gender)) : "X",
         pref: cols.pref >= 0 ? parsePref(get(r, cols.pref)) : "any",
-        partnerText: get(r, cols.partner),
+        partnerText: get(r, cols.partner), users,
       });
     }
     // same name, different emails -> keep both, label them apart
@@ -961,84 +1092,171 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       if (seenNames[lo] > 1) p.name = `${p.name} (${seenNames[lo]})`;
     }
     const names = list.map(p => p.name);
+    const userIndex = new Map();
+    list.forEach(p => p.users.forEach(u => userIndex.set(u, p.name)));
 
-    // partners
-    const claim = {}, unmatched = [];
+    // ---- who asked for whom
+    const wants = {}, chosenBy = {};
+    names.forEach(n => { wants[n] = new Set(); chosenBy[n] = new Set(); });
+    const absent = [], selfRefs = [], exampleHits = [];
     for (const p of list) {
-      const m = p.partnerText ? matchPartner(p.partnerText, p.name, names) : null;
-      if (m === undefined) unmatched.push(p);
-      claim[p.name] = m || null;
+      for (const piece of splitPartners(p.partnerText)) {
+        const compact = piece.replace(/\s+/g, "").toLowerCase();
+        let hit;
+        if (USER.test(compact)) {
+          hit = userIndex.get(compact);
+          if (!hit) {
+            const near = [...userIndex.keys()].filter(u => osa(u, compact) <= 1);
+            const ppl = [...new Set(near.map(u => userIndex.get(u)))];
+            if (ppl.length === 1) hit = ppl[0];
+          }
+          if (!hit) { absent.push({ who: p.name, piece, user: true }); continue; }
+          if (cols.example && compact === cols.example) exampleHits.push({ who: p.name, target: hit });
+        } else {
+          hit = matchPartner(piece, null, names);
+          if (hit === null) continue;
+          if (hit === undefined) { absent.push({ who: p.name, piece, user: false }); continue; }
+        }
+        if (hit === p.name) { selfRefs.push(p.name); continue; }
+        wants[p.name].add(hit); chosenBy[hit].add(p.name);
+      }
     }
+
+    // ---- fixed pairs
+    const mutual = (a, b) => wants[a].has(b) && wants[b].has(a);
+    const mutualCount = {};
+    names.forEach(a => { mutualCount[a] = [...wants[a]].filter(b => mutual(a, b)).length; });
     const partner = {};
-    for (const p of list) {
-      const b = claim[p.name];
-      if (b && claim[b] === p.name) { partner[p.name] = b; partner[b] = p.name; }
+    for (const a of names) for (const b of wants[a]) {
+      if (a < b && mutual(a, b) && mutualCount[a] === 1 && mutualCount[b] === 1) { partner[a] = b; partner[b] = a; }
     }
-    const conflicts = [];
-    for (const p of list) {
-      const a = p.name, b = claim[a];
-      if (!b || partner[a]) continue;
-      if (!partner[b] && !claim[b]) { partner[a] = b; partner[b] = a; }
-      else conflicts.push(`${a} put ${b} as their partner, but ${b} ${partner[b] ? "is already paired with " + partner[b] : "put " + claim[b]}. ${a} is in as a single for now.`);
+    for (const a of names) {
+      if (partner[a] || wants[a].size !== 1) continue;
+      const b = [...wants[a]][0];
+      if (!partner[b] && wants[b].size === 0 && chosenBy[b].size === 1) { partner[a] = b; partner[b] = a; }
+    }
+
+    // ---- friend groups: everyone linked by any request, 3 or more people
+    const seen = new Set(), groups = [], groupOf = {};
+    for (const n of names) {
+      if (seen.has(n)) continue;
+      const comp = [], stack = [n];
+      seen.add(n);
+      while (stack.length) {
+        const x = stack.pop(); comp.push(x);
+        for (const y of [...wants[x], ...chosenBy[x]]) if (!seen.has(y)) { seen.add(y); stack.push(y); }
+      }
+      if (comp.length >= 3) {
+        const id = "g" + (groups.length + 1);
+        const order = names.filter(x => comp.includes(x));
+        groups.push({ id, members: order });
+        order.forEach(x => { groupOf[x] = id; });
+      }
     }
 
     const players = list.map(p => ({
-      name: p.name, skill: p.skill || 3, skillFlag: !p.skill, gender: p.gender, pref: p.pref, partner: partner[p.name] || null,
+      name: p.name, skill: p.skill || 3, skillFlag: !p.skill, gender: p.gender, pref: p.pref,
+      partner: partner[p.name] || null, group: groupOf[p.name] || null,
     }));
 
+    // ---- messages
     const nPairs = Object.keys(partner).length / 2;
     let head = `${players.length} players imported · ${nPairs} pair${nPairs === 1 ? "" : "s"}, ${players.length - 2 * nPairs} singles`;
+    if (groups.length) head += ` · ${groups.length} friend group${groups.length === 1 ? "" : "s"}`;
     const sk = Object.entries(skipped).map(([k, v]) => `${v} ${k}`);
     if (sk.length) head += ` · skipped ${sk.join(", ")}`;
     if (dupes) head += ` · merged ${dupes} duplicate sign-up${dupes === 1 ? "" : "s"}`;
     notes.unshift({ level: "ok", text: head });
-    for (const p of unmatched) notes.push({ level: "warn", text: `${p.name}'s partner "${p.partnerText}" didn't match anyone who signed up, so they're in as a single. Pick their partner in the table if they're here.` });
-    conflicts.forEach(t => notes.push({ level: "warn", text: t }));
+
+    for (const g of groups) {
+      const done = new Set(), parts = [];
+      for (const m of g.members) {
+        if (done.has(m)) continue;
+        if (partner[m]) { parts.push(`${m} & ${partner[m]}`); done.add(m); done.add(partner[m]); }
+        else { parts.push(m); done.add(m); }
+      }
+      const singles = g.members.filter(m => !partner[m]);
+      let t = `${listNames(parts)} asked to play together. `;
+      if (!singles.length) t += "The pairs stay as they are and will share a court a couple of times.";
+      else if (singles.length === g.members.length) t += "They'll rotate as partners and share a court a couple of times.";
+      else if (singles.length === 1) t += `${singles[0]} will share a court with them a couple of times.`;
+      else t += `${listNames(singles)} will rotate partners within the group, and everyone in it will share a court a couple of times.`;
+      notes.push({ level: "info", text: t });
+    }
+    for (const a of absent) {
+      const hasOther = wants[a.who].size > 0;
+      if (a.user) notes.push({ level: hasOther ? "info" : "warn", text: `${a.who} asked for ${a.piece}, who hasn't signed up${hasOther ? "." : ", so they're in as a single. Pick their partner in the table if they're here."}` });
+      else notes.push({ level: hasOther ? "info" : "warn", text: `${a.who}'s partner "${a.piece}" didn't match anyone who signed up${hasOther ? "." : ", so they're in as a single. Pick their partner in the table if they're here."}` });
+    }
+    [...new Set(selfRefs)].forEach(n => notes.push({ level: "info", text: `${n} put their own username as partner, so they're in as a single.` }));
+    for (const e of exampleHits) {
+      if (!mutual(e.who, e.target)) notes.push({ level: "warn", text: `${e.who} put ${cols.example.toUpperCase()}, which is the example username in the question. It's been matched to ${e.target}. Check they really meant them.` });
+    }
+    for (const a of names) {
+      if (wants[a].size === 1 && !partner[a] && !groupOf[a]) {
+        const b = [...wants[a]][0];
+        notes.push({ level: "warn", text: `${a} put ${b} as their partner, but ${b} ${partner[b] ? "is already paired with " + partner[b] : "asked for someone else"}. ${a} is in as a single for now.` });
+      }
+    }
     const noSkill = players.filter(p => p.skillFlag);
     if (noSkill.length) notes.push({ level: "warn", text: `No readable skill level for ${noSkill.map(p => p.name).join(", ")}. Set to 3 for now, highlighted below.` });
+    const byName = Object.fromEntries(players.map(p => [p.name, p]));
     const notedPairs = new Set();
     for (const p of players) {
       if (p.pref === "single" && p.gender === "X") notes.push({ level: "warn", text: `${p.name} asked for single-gender courts but didn't give their gender as male or female, so they'll go on mixed courts. Change it in the table if needed.` });
-      const q = p.partner && players.find(x => x.name === p.partner);
+      const q = p.partner && byName[p.partner];
       if (q && p.pref === "single" && q.gender !== p.gender && !notedPairs.has(q.name)) {
         notedPairs.add(p.name);
         notes.push({ level: "info", text: `${p.name} asked for single-gender courts but is paired with ${q.name}, so they'll play as a mixed pair.` });
       }
     }
-    return { players, notes, columns: cols };
+    // Single-gender requests with very few same-gender players around
+    for (const g of ["F", "M"]) {
+      const able = players.filter(p => p.gender === g && !(p.partner && byName[p.partner].gender !== g));
+      const asking = able.filter(p => p.pref === "single");
+      if (asking.length && able.length < 8) {
+        const word = g === "F" ? "women" : "men";
+        const others = able.filter(p => !asking.includes(p)).map(p => p.name);
+        notes.push({ level: "warn", text: `${listNames(asking.map(p => p.name))} asked for ${word}-only courts, but only ${able.length - 1} other ${word} can join (${listNames(others) || "nobody else asked"}), so the same few will keep playing together. Switch to "Any court" in the table if that's not wanted.` });
+      }
+    }
+    return { players, groups, notes, columns: cols };
   }
 
-  // Fake Luma export for trying the app. Clearly example data.
+  // Fake Luma export in the same shape as the real one, for trying the app. Clearly example data.
   function exampleCsv() {
     const first = ["Alex","Jo","Sam","Priya","Tom","Ella","Ben","Maya","Jack","Zara","Oli","Grace","Harry","Aisha","Luke","Chloe","Dan","Sofia","Ryan","Isla","Kieran","Leah","Matt","Nina","Owen","Ruby","Josh","Freya","Callum","Hannah","Adam","Lily","Ethan","Amelia","Finn","Erin","George","Mia","Rob","Tara","Will","Katie","Euan","Holly","Jamie","Sara","Max","Eve","Noah","Rosie","Charlie","Imogen","Lewis","Anna"];
     const last = ["Smith","Brown","Lee","Shah","Reed","Patel","Clark","Wood","Hughes","Khan","Green","Hall","Evans","Ali","Moore","King","Wright","Rossi","Hill","Scott","Murphy","Baker","Ward","Cole","Price","Hart","Bell","Grant","Fraser","Lloyd","Kerr","Dunn","Shaw","Jones","Burns","Walsh","Webb","Ford","Cook","Ross","Black","Day","Fox","Lane","Page","Rice","Stone","West","Young","Banks","Carr","Dean","Ellis","Gill"];
     const fem = new Set(["Jo","Priya","Ella","Maya","Zara","Grace","Aisha","Chloe","Sofia","Isla","Leah","Nina","Ruby","Freya","Hannah","Lily","Amelia","Erin","Mia","Tara","Katie","Holly","Sara","Eve","Rosie","Imogen","Anna"]);
+    const levels = ["Beginner", "Lower Intermediate", "Higher Intermediate", "Lower Advanced", "Higher Advanced"];
     const rng = root.PadelEngine ? root.PadelEngine.makeRng(7) : Math.random;
-    const levels = ["1 - Beginner", "2 - Improver", "3 - Intermediate", "4 - Advanced", "5 - Competitive"];
-    const rows = [["api_id","name","first_name","last_name","email","approval_status","created_at","What's your uni email?","Skill level (1-5)","Gender","Mixed or single gender courts?","Partner (optional)"]];
-    const people = first.map((f, i) => ({ f, l: last[i] }));
-    const partnerOf = {};
-    const pairIdx = [[0,1],[2,6],[3,9],[4,8],[11,13],[14,16],[20,22],[30,32]];
-    pairIdx.forEach(([a, b]) => { partnerOf[a] = b; partnerOf[b] = a; });
+    const people = first.map((f, i) => ({ f, l: last[i], u: (f[0] + last[i][0]).toLowerCase() + (1000 + i * 37) }));
+    const U = i => people[i].u.toUpperCase();
+    const ask = {
+      0: U(1),                      // pair by username
+      2: people[6].u, 6: U(2),      // mutual pair
+      3: `${U(9)}, ${U(12)}`, 9: `${U(3)}, ${U(12)}`, 12: U(13), 13: people[12].u, // two pairs who want to play together
+      20: `${U(22)} and ${U(24)}`, 22: `${U(24)} or ${U(20)}`, 24: `${U(20)} ${U(22)}`, // trio
+      30: "Ethan, Finn burns", 32: people[30].u,                            // names typed in
+      14: "ZZ9999",                 // didn't sign up
+      15: people[15].u,             // own username
+      40: people[42].u.replace(/(\d)(\d)$/, "$2$1"), // digits swapped
+      27: "none",
+    };
+    const rows = [["guest_id","name","first_name","last_name","email","created_at","approval_status","ticket_name","What level are you?","Gender?","What would you like to play?","Please enter a partners university username if you would like to be paired, E.g AB1234","ID"]];
     people.forEach((p, i) => {
-      const g = p.f === "Charlie" ? "Non-binary" : fem.has(p.f) ? "Female" : "Male";
+      const g = p.f === "Charlie" ? "Prefer not to say" : fem.has(p.f) ? "Female" : "Male";
       const lvl = levels[Math.min(4, Math.floor(rng() * rng() * 5 + rng() * 2.2))];
-      const pref = (fem.has(p.f) && i % 4 === 1) || i % 11 === 3 ? "Single gender courts only" : "Happy with mixed";
-      let partner = "";
-      if (partnerOf[i] != null) { const q = people[partnerOf[i]]; partner = i % 3 === 0 ? q.f : `${q.f} ${q.l}`; }
-      if (i === 25) partner = "Sammy Doyle";
-      if (i === 27) partner = "none";
-      if (i === 40) partner = "Hary Evans";
+      const play = (!fem.has(p.f) && i % 4 === 1) || (fem.has(p.f) && i % 9 === 1) ? "Single Gender" : "Mixed";
       let status = "approved";
       if (i >= 51) status = i === 53 ? "declined" : "waitlist";
-      const email = `${p.f}.${p.l}`.toLowerCase() + "@uni.example";
-      rows.push([`gst-${1000 + i}`, `${p.f} ${p.l}`, p.f, p.l, email, status, "2026-11-01T10:00:00Z", email, lvl, g, pref, partner]);
+      rows.push([`gst-ex${1000 + i}`, i % 13 === 5 ? `${p.f} ${p.l.toLowerCase()}` : `${p.f} ${p.l}`, p.f, p.l, `${p.u}@uni.example`, "2026-11-09T12:00:00Z", status, "Standard", lvl, g, play, ask[i] || "", p.u]);
     });
-    rows.push(["gst-2000", "Ben Clark", "Ben", "Clark", "ben.clark@uni.example", "approved", "2026-11-02T09:00:00Z", "ben.clark@uni.example", "3 - Intermediate", "Male", "Happy with mixed", ""]);
+    rows.push(["gst-ex2000", "Ben Clark", "Ben", "Clark", `${people[6].u}@uni.example`, "2026-11-09T13:00:00Z", "approved", "Standard", "Higher Intermediate", "Male", "Mixed", U(2), people[6].u]);
     return rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(",")).join("\n");
   }
 
-  root.PadelImport = { parseCSV, detectColumns, parseSkill, parseGender, parsePref, matchPartner, importSignups, exampleCsv };
+  root.PadelImport = { parseCSV, detectColumns, parseSkill, parseGender, parsePref, matchPartner, splitPartners, importSignups, exampleCsv };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
 
@@ -1300,7 +1518,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const out = {};
     for (const p of state.players) {
       const q = p.partner && byId(p.partner);
-      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref };
+      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref, group: p.group || null };
     }
     return out;
   }
@@ -1385,7 +1603,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const gender = `<select id="g-${p.id}" data-act="gender" data-id="${p.id}" aria-label="Gender for ${esc(p.name)}">${[["M", "Man"], ["F", "Woman"], ["X", "Other"]].map(([v, l]) => `<option value="${v}"${p.gender === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
       const pref = `<select id="pf-${p.id}" data-act="pref" data-id="${p.id}" aria-label="Court preference for ${esc(p.name)}"><option value="any"${p.pref !== "single" ? " selected" : ""}>Any court</option><option value="single"${p.pref === "single" ? " selected" : ""}>Single-gender</option></select>`;
       return `<div class="prow${p.skillFlag ? " flag" : ""}">
-        <div class="c-name"><input type="text" id="nm-${p.id}" data-act="name" data-id="${p.id}" value="${esc(p.name)}" aria-label="Name">${p.skillFlag ? '<span class="pair-tag" style="color:var(--warn)">Check skill</span>' : ""}</div>
+        <div class="c-name"><input type="text" id="nm-${p.id}" data-act="name" data-id="${p.id}" value="${esc(p.name)}" aria-label="Name">${p.skillFlag ? '<span class="pair-tag" style="color:var(--warn)">Check skill</span>' : ""}${groupTag(p)}</div>
         <div class="c-skill"><div class="skills" role="group" aria-label="Skill for ${esc(p.name)}">${sk}</div></div>
         <div class="c-partner">${partner}</div>
         <div class="c-gender">${gender}</div>
@@ -1396,13 +1614,26 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     box.innerHTML = `<div class="players"><div class="prow head"><span>Name</span><span>Skill</span><span>Partner</span><span>Gender</span><span>Courts</span><span></span></div>${rows}</div>`;
   }
 
+  function groupMates(p) { return p.group ? state.players.filter(q => q.group === p.group && q.id !== p.id) : []; }
+  function groupTag(p) {
+    const mates = groupMates(p);
+    if (!mates.length) return "";
+    return `<span class="group-tag">Group with ${esc(mates.map(q => q.name).join(", "))} <button type="button" class="linkish" id="ug-${p.id}" data-act="ungroup" data-id="${p.id}" aria-label="Take ${esc(p.name)} out of this group">remove</button></span>`;
+  }
+  function leaveGroup(p) {
+    const rest = groupMates(p);
+    p.group = null;
+    if (rest.length < 2 || (rest.length === 2 && rest[0].partner === rest[1].id)) rest.forEach(q => { q.group = null; });
+  }
   $("playersBox").addEventListener("click", e => {
     const b = e.target.closest("[data-act]");
     if (!b) return;
     const p = byId(b.dataset.id);
     if (!p) return;
     if (b.dataset.act === "skill") { p.skill = +b.dataset.v; p.skillFlag = false; withFocus(playersChanged); }
+    if (b.dataset.act === "ungroup") { leaveGroup(p); playersChanged(); toast(`${p.name} taken out of the group`); }
     if (b.dataset.act === "del") {
+      leaveGroup(p);
       state.players.forEach(q => { if (q.partner === p.id) q.partner = null; });
       state.players = state.players.filter(q => q !== p);
       playersChanged(); toast(`Removed ${p.name}`);
@@ -1434,7 +1665,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     e.preventDefault();
     const v = $("addName").value.replace(/\s+/g, " ").trim();
     if (!v) return;
-    state.players.push({ id: pid(), name: uniqueName(v), skill: 3, skillFlag: true, gender: "X", pref: "any", partner: null });
+    state.players.push({ id: pid(), name: uniqueName(v), skill: 3, skillFlag: true, gender: "X", pref: "any", partner: null, group: null });
     $("addName").value = "";
     playersChanged();
     $("addName").focus();
@@ -1596,6 +1827,11 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const miss = m.genderMisses.slice(0, 6).map(x => `${x.name} ${x.time} C${x.court}`).join(", ");
       stats.push([m.genderMisses.length ? "bad" : "good", "Single-gender", `${m.genderMet} of ${m.genderGames} games`,
         m.genderMisses.length ? `On a mixed court: ${miss}${m.genderMisses.length > 6 ? "..." : ""}. The numbers didn't allow it without cutting play time.` : "Every single-gender request is met"]);
+    }
+    for (const g of m.groups) {
+      const parts = Object.entries(g.partners).map(([k, v]) => `${k}${v > 1 ? " " + v + "x" : ""}`);
+      stats.push([g.shared >= 2 ? "good" : "bad", "Friend group", `${g.shared} game${g.shared === 1 ? "" : "s"} together`,
+        `${g.members.join(", ")}${parts.length ? ". Partnered: " + parts.join(", ") : ""}`]);
     }
     if (m.shortGames) stats.push(["bad", "Short games", String(m.shortGames), "Games missing a player after dropouts"]);
     $("summaryBox").innerHTML = stats.map(([cls, k, v, d]) => `<div class="stat ${cls}"><span class="k">${k}</span><span class="v">${esc(v)}</span><span class="d">${esc(d)}</span></div>`).join("");

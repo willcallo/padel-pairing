@@ -263,3 +263,78 @@ test("court map model", () => {
   assert.match(D.toSVG(m), /^<svg/);
   assert.equal(D.pdfSafe("Zoë Łukasz 王"), "Zoë Lukasz ?");
 });
+
+// Synthetic copy of the real Luma export's shape (made-up people, no real data).
+const REAL_SHAPE = [
+  'guest_id,name,first_name,last_name,email,phone_number,created_at,approval_status,checked_in_at,ticket_name,What level are you?,Gender?,What would you like to play?,"Please enter a partners university username if you would like to be paired, E.g AB1234",Are you a driver?,ID',
+  'g1,Amy One,Amy,One,ao101@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Female,Mixed,Bt202,Yes,ao101',      // one-sided username
+  'g2,Bob Two,Bob,Two,bt202@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Male,Mixed,,No,bt202',
+  'g3,Cal Three,Cal,Three,ct303@uni.ac.uk,,t,approved,,Standard,Lower Advanced,Male,Mixed,ZZ999 DF404,Yes,ct303',  // absent + mutual
+  'g4,Dan Four,Dan,Four,df404@uni.ac.uk,,t,approved,,Standard,Lower Advanced,Male,Single Gender,ct303,No,df404',
+  'g5,Eve Five,Eve,Five,ef505@uni.ac.uk,,t,approved,,Standard,Higher Advanced,Female,Mixed,"FS606, GS707",,ef505', // two pairs
+  'g6,Fay Six,Fay,Six,fs606@uni.ac.uk,,t,approved,,Standard,Higher Advanced,Male,Mixed,"EF505, GS707",,fs606',
+  'g7,Gus Seven,Gus,Seven,gs707@uni.ac.uk,,t,approved,,Standard,Higher Advanced,Male,Mixed,HE808,No,gs707',
+  'g8,Hal Eight,Hal,Eight,he808@uni.ac.uk,,t,approved,,Standard,Higher Advanced,Male,Mixed,Gs707,No,he808',
+  'g9,Ivy nine,Ivy,Nine,in909@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Male,Mixed,"jt110 , kl111",No,in909', // trio
+  'g10,Jon ten,Jon,Ten,jt110@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Male,Single Gender,KL111 and IN909,,jt110',
+  'g11,Kit,,,kl111@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Male,Single Gender,Jt110 or in990,No,kl111', // swapped digits
+  'g12,Lou Twelve,Lou,Twelve,lt112@uni.ac.uk,,t,approved,,Standard,Beginner,Male,Mixed,Lt112,No,lt112',            // own username
+  'g13,Mo,Mo,,mo113@uni.ac.uk,,t,approved,,Standard,Lower Intermediate,Male,Single Gender,Max Nobody,No,mo113',    // name, absent
+  'g14,Nia Fourteen,Nia,Fourteen,nf114@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Female,Mixed,"Oz, Pat sixteen",No,nf114', // names
+  'g15,Oz Fifteen,Oz,Fifteen,of115@uni.ac.uk,,t,approved,,Standard,Higher Intermediate,Male,Mixed,,No,of115',
+  'g16,Pat Sixteen,Pat,Sixteen,ps116@uni.ac.uk,,t,approved,,Standard,Lower Advanced,Male,Mixed,NF114,No,ps116',
+  'g17,Quin Ab,Quin,Ab,qa117@uni.ac.uk,,t,approved,,Standard,Beginner,Female,Single Gender,,No,qa117',
+  ',,Rae ,Last,rl118@uni.ac.uk,,,,,,Higher Intermediate,Female,Mixed,nf114,,rl118',                                 // no name/status row
+  'g19,Sol Nine,Sol,Nine,sn119@uni.ac.uk,,t,approved,,Standard,Lower Intermediate,Male,Mixed,AB1234,No,sn119',      // example (absent)
+].join("\n");
+
+test("real Luma shape: columns, skills, usernames, groups", () => {
+  const r = I.importSignups(REAL_SHAPE);
+  const by = Object.fromEntries(r.players.map(p => [p.name, p]));
+  assert.ok(r.columns.pref >= 0, "court preference column found");
+  assert.equal(r.columns.example, "ab1234");
+  assert.equal(r.players.length, 19);
+  assert.deepEqual(["Higher Intermediate", "Lower Advanced", "Higher Advanced", "Beginner", "Lower Intermediate"].map(I.parseSkill), [3, 4, 5, 1, 2]);
+  assert.equal(by["Dan Four"].pref, "single");
+  assert.equal(by["Amy One"].pref, "any");
+  assert.ok(by["Ivy Nine"] && by["Jon Ten"], "lowercase names tidied");
+  assert.ok(by["Rae Last"], "row without name/status built from first + last");
+  assert.equal(by["Amy One"].partner, "Bob Two");
+  assert.equal(by["Cal Three"].partner, "Dan Four");
+  assert.equal(by["Eve Five"].partner, "Fay Six");
+  assert.equal(by["Gus Seven"].partner, "Hal Eight");
+  assert.equal(by["Lou Twelve"].partner, null);
+  // groups
+  const grp = n => r.groups.find(g => g.members.includes(n));
+  same([...grp("Eve Five").members].sort(), ["Eve Five", "Fay Six", "Gus Seven", "Hal Eight"]);
+  same([...grp("Kit").members].sort(), ["Ivy Nine", "Jon Ten", "Kit"]);
+  ["Ivy Nine", "Jon Ten", "Kit"].forEach(n => assert.equal(by[n].partner, null));
+  same([...grp("Nia Fourteen").members].sort(), ["Nia Fourteen", "Oz Fifteen", "Pat Sixteen", "Rae Last"]);
+  assert.equal(grp("Amy One"), undefined);
+  const text = r.notes.map(n => n.text).join("\n");
+  assert.match(text, /Cal Three asked for ZZ999, who hasn't signed up\./);
+  assert.match(text, /Lou Twelve put their own username/);
+  assert.match(text, /"Max Nobody" didn't match/);
+  assert.match(text, /Sol Nine asked for AB1234, who hasn't signed up/);
+  assert.match(text, /Quin Ab asked for women-only courts/);
+  assert.match(text, /3 friend groups/);
+});
+
+test("friend groups: trio rotates, two pairs share a court, hour kept", () => {
+  for (let seed = 0; seed < 4; seed++) {
+    const players = roster(40, 2, seed, { genders: () => "M" });
+    // trio of singles + a second fixed pair grouped with pair 0
+    ["Player 10", "Player 11", "Player 12"].forEach(n => { players[n].group = "t"; players[n].skill = 3; });
+    ["Player 00", "Player 01", "Player 02", "Player 03"].forEach(n => { players[n].group = "q"; players[n].skill = 4; });
+    const s = E.generate(players, { seed });
+    checkBasic(s);
+    assert.ok(Math.min(...Object.values(E.gamesPlayed(s))) >= 4);
+    const m = E.summary(s);
+    const trio = m.groups.find(g => g.id === "t"), quad = m.groups.find(g => g.id === "q");
+    assert.ok(Object.keys(trio.partners).length >= 2, `trio partners ${JSON.stringify(trio.partners)}`);
+    assert.ok(Object.values(trio.partners).every(v => v <= 2), "no friend pairing more than twice");
+    assert.ok(quad.shared >= 2, `two pairs shared ${quad.shared}`);
+    assert.equal(m.repeatPartners, 0, "friend repeats aren't counted as problems");
+    assert.ok(m.avgGap < 0.6);
+  }
+});

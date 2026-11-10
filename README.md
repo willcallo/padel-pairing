@@ -6,7 +6,10 @@ Open `index.html` (or the private claude.ai link). Nothing to install.
 
 1. **Luma → event → Guests → Download CSV**, then in the app press **Choose Luma CSV** (or paste the CSV). Only approved guests come in; waitlist/declined are skipped.
    The app reads the form questions: name, uni email, skill level (1-5), gender, mixed or single-gender courts, partner (optional).
-2. Check the import messages (e.g. a partner name that didn't match anyone) and fix anything in the table.
+   - Skill: Beginner = 1, Lower Intermediate = 2, Higher Intermediate = 3, Lower Advanced = 4, Higher Advanced = 5.
+   - Partners can be uni usernames (matched against each guest's email) or names, and people can list more than one (`JM3553, HP809`, `AB1 and CD2`). Small typos like swapped digits are caught.
+   - Two people who ask for each other become a fixed pair. People linked by requests (e.g. two pairs who want to play each other, or three friends who all name each other) become a **friend group**: fixed pairs stay together, singles in the group rotate partners with each other, and the group shares a court a couple of times.
+2. Check the import messages (e.g. a partner who hasn't signed up, or a single-gender request with very few people to play with) and fix anything in the table.
 3. Press **Make schedule**.
 4. Press **Save PDF** and post it in the group chat: one court map per 15-minute block (numbers in yellow vs white, "Next on" under each court), then a "who plays when" list so everyone can find their number.
 5. Someone drops out? **Schedule → Someone dropped out**, pick them and the time. Only their slots change, filled from people sitting out (closest skill first, then whoever has played least). Copy the short changes message into the chat and save a fresh PDF.
