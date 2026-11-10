@@ -145,6 +145,10 @@ details.settings summary::before { content: ""; flex: none; width: 7px; height: 
 details.settings[open] summary::before { transform: translateY(-3px) rotate(45deg); }
 details.settings .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 12px; padding-bottom: 4px; }
 label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.courts-field { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.court-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.court-chips button { min-width: 44px; height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--fill-strong); color: var(--faint); font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: line-through; }
+.court-chips button[aria-pressed="true"] { background: var(--court); color: #fff; text-decoration: none; }
 label.field input, label.field select { color: var(--ink); font-weight: 400; font-size: 15px; background: var(--surface); }
 
 /* Player list */
@@ -273,7 +277,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         <summary id="settingsSummary">Session settings</summary>
         <div class="grid">
           <label class="field">Date <input type="date" id="setDate"></label>
-          <label class="field">Courts <input type="number" id="setCourts" min="1" max="7"></label>
+          <div class="field courts-field">Courts we have <div class="court-chips" id="setCourts" role="group" aria-label="Open courts"></div></div>
           <label class="field">Start <input type="time" id="setStart" step="300"></label>
           <label class="field">End <input type="time" id="setEnd" step="300"></label>
           <label class="field">Block (min)
@@ -615,7 +619,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return { names, skill, gender, single, anySingle, group, anyGroup };
   }
 
-  function generateOnce(players, courtsUsed, times, minBlocks, rng) {
+  function generateOnce(players, courtsUsed, times, minBlocks, rng, openCourts) {
     const ctx = makeCtx(players);
     const names = ctx.names;
     const units = [], seen = new Set();
@@ -640,7 +644,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const games = best.games.slice().sort((a, b) => sum(b) - sum(a));
       const playing = new Set(), outGames = [];
       games.forEach((gm, i) => {
-        outGames.push({ court: i + 1, teams: [gm.ta, gm.tb] });
+        outGames.push({ court: openCourts[i], teams: [gm.ta, gm.tb] });
         for (const x of gm.ta) for (const y of gm.tb) hist.opp.set(key(x, y), (hist.opp.get(key(x, y)) || 0) + 1);
         if (!gm.fa) hist.part.set(key(gm.ta[0], gm.ta[1]), (hist.part.get(key(gm.ta[0], gm.ta[1])) || 0) + 1);
         if (!gm.fb) hist.part.set(key(gm.tb[0], gm.tb[1]), (hist.part.get(key(gm.tb[0], gm.tb[1])) || 0) + 1);
@@ -671,6 +675,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return out;
   }
 
+  // Open courts in number order. opts.openCourts wins; else closedCourts are removed from 1..courts.
+  const ALL_COURTS = [1, 2, 3, 4, 5, 6, 7];
+  function openCourtList(o) {
+    if (Array.isArray(o.openCourts)) return ALL_COURTS.filter(c => o.openCourts.includes(c));
+    const closed = Array.isArray(o.closedCourts) ? o.closedCourts : [];
+    return ALL_COURTS.filter(c => c <= (+o.courts || 7) && !closed.includes(c));
+  }
+
   // players: {name: {skill 1-5, partner name|null, gender "M"|"F"|"X", pref "single"|"any", group id|null}}
   function generate(players, opts) {
     opts = Object.assign({ courts: 7, start: "14:00", end: "16:00", block: 15, minMinutes: 60, seed: null, date: "" }, opts || {});
@@ -682,18 +694,20 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       if (!(p.skill >= 1 && p.skill <= 5)) throw new PadelError(`${n} needs a skill level from 1 to 5`);
       if (p.partner && (!players[p.partner] || players[p.partner].partner !== n)) throw new PadelError(`${n}'s partner ${p.partner} isn't paired back. Fix it in the partner column.`);
     }
-    const used = capacityCheck(Object.keys(players).length, +opts.courts, times.length, minBlocks, opts.minMinutes);
+    const open = openCourtList(opts);
+    if (!open.length) throw new PadelError("All the courts are closed. Open at least one in Session settings.");
+    const used = capacityCheck(Object.keys(players).length, open.length, times.length, minBlocks, opts.minMinutes);
     let seed = opts.seed == null ? Math.floor(Math.random() * 1e6) + 1 : +opts.seed;
     let res = null, attempt = 0;
     for (; attempt < MAX_ATTEMPTS; attempt++) {
-      res = generateOnce(players, used, times, minBlocks, makeRng(seed + attempt));
+      res = generateOnce(players, used, times, minBlocks, makeRng(seed + attempt), open);
       if (Math.min(...Object.values(res.hist.games)) >= minBlocks) break;
     }
     if (attempt === MAX_ATTEMPTS) throw new PadelError(`Couldn't find a schedule giving everyone ${opts.minMinutes} minutes. Try Shuffle again.`);
     const pl = {};
     for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any", group: players[n].group || null };
     return {
-      settings: { courts: +opts.courts, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
+      settings: { courts: open.length, openCourts: open, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
       players: pl,
       numbers: assignNumbers(Object.keys(players)),
       blocks: res.blocks,
@@ -847,6 +861,47 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return out;
   }
 
+  // Hard rules every schedule must keep. Returns {rules, problems: [plain-English strings]}.
+  function validate(s) {
+    const P = s.players, set = s.settings, problems = [];
+    const open = new Set(openCourtList(set.openCourts ? { openCourts: set.openCourts } : { courts: set.courts }));
+    const active = (n, b) => !droppedBy(s, n, b);
+    s.blocks.forEach((blk, b) => {
+      const where = {};
+      let places = 0;
+      for (const g of blk.games) {
+        if (!open.has(g.court)) problems.push(`${blk.time}: a game is on Court ${g.court}, which is closed`);
+        if (g.teams.length !== 2 || g.teams.some(t => t.length !== 2)) { problems.push(`${blk.time}: Court ${g.court} doesn't have two teams of two`); continue; }
+        for (const t of g.teams) for (const x of t) {
+          places++;
+          if (!x) continue;
+          if (!P[x]) { problems.push(`${blk.time}: unknown player "${x}" on Court ${g.court}`); continue; }
+          if (where[x] != null) problems.push(`${blk.time}: ${x} is on Court ${where[x]} and Court ${g.court}`);
+          else where[x] = g.court;
+          if (!active(x, b)) problems.push(`${blk.time}: ${x} is on Court ${g.court} but has dropped out`);
+        }
+        for (const t of g.teams) for (const x of t) {
+          const q = x && P[x] && P[x].partner;
+          if (q && P[q] && active(q, b) && !t.includes(q)) problems.push(`${blk.time}: ${x} isn't on the same team as their partner ${q}`);
+        }
+      }
+      if (places !== set.courtsUsed * 4) problems.push(`${blk.time}: ${places} places on court, expected ${set.courtsUsed * 4}`);
+      for (const n in P) {
+        if (!active(n, b)) continue;
+        const on = where[n] != null, sit = blk.sittingOut.includes(n);
+        if (!on && !sit) problems.push(`${blk.time}: ${n} is missing (not on court or sitting out)`);
+        if (on && sit) problems.push(`${blk.time}: ${n} is on court and sitting out`);
+        const q = P[n].partner;
+        if (q && P[q] && active(q, b) && n < q && on !== (where[q] != null)) problems.push(`${blk.time}: ${n} and ${q} are a pair but only one of them is on court`);
+      }
+    });
+    const counts = gamesPlayed(s);
+    for (const n in P) {
+      if (P[n].droppedFrom == null && counts[n] < set.minBlocks) problems.push(`${n} only plays ${counts[n] * set.block} min (should be ${set.minMinutes}+)`);
+    }
+    return { rules: 6, problems };
+  }
+
   function playerSlots(s) {
     const out = {};
     for (const n in s.players) out[n] = [];
@@ -875,7 +930,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return lines.join("\n") + "\n";
   }
 
-  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, gamesPlayed, playerSlots,
+  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, validate, openCourtList, gamesPlayed, playerSlots,
     renderText, maxPlayers, wantsSingle, byName, gamePlayers, consts: { W_TEAM, W_SPREAD, W_OPP, W_PART, W_GENDER, DROP_EXTRA_GAME } };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
@@ -1269,6 +1324,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     ground: "#FFFFFF", navy: "#093B6C", court: "#0155AD", border: "#093B6C", line: "#FFFFFF", net: "#D9DEE6",
     ball: "#EEC54A", white: "#FFFFFF", ink: "#0E2440", grey: "#55657C", free: "#9FC0E6", hi: "#E4572E",
     panel: "#F1F4F9", chipLine: "#C9D6E6", track: "#DCE4EE", hair: "#E1E7EF", tag: "#E8EFF8",
+    closed: "#C8D0DA", closedInk: "#6E7F95",
   };
   const MAP_W = 1100;
   const TOP = 190;
@@ -1340,9 +1396,16 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         fill: i < b ? C.court : i === b ? C.ball : C.track });
     }
 
+    const openList = s.settings.openCourts || [1, 2, 3, 4, 5, 6, 7].filter(c => c <= (s.settings.courts || 7));
     for (const c of [3, 2, 1, 6, 7, 4, 5]) {
       const L = LAYOUT[c];
       items.push({ t: "text", x: L.x + L.w / 2, y: L.y - 18, s: `COURT ${c}`, size: 36, bold: true, fill: C.navy, anchor: "middle" });
+      if (!openList.includes(c)) {
+        // Closed this week: grey panel, like the club's own court sheet.
+        items.push({ t: "rect", x: L.x, y: L.y, w: L.w, h: L.h, fill: C.closed });
+        items.push({ t: "text", x: L.x + L.w / 2, y: L.y + L.h / 2 + 16, s: "CLOSED", size: L.land ? 48 : 40, bold: true, fill: C.closedInk, anchor: "middle" });
+        continue;
+      }
       courtItems(items, L, byCourt[c] || null, N, opts.highlight);
       const below = L.y + L.h;
       if (!next) {
@@ -1429,7 +1492,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return d.toISOString().slice(0, 10);
   }
   function freshState() {
-    return { v: 1, settings: { date: nextWednesday(), courts: 7, start: "14:00", end: "16:00", block: 15, minMinutes: 60 },
+    return { v: 1, settings: { date: nextWednesday(), courts: 7, closedCourts: [], start: "14:00", end: "16:00", block: 15, minMinutes: 60 },
       players: [], notes: [], example: false, schedule: null, stale: false, changes: [], history: [] };
   }
   let state = freshState();
@@ -1508,6 +1571,12 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const d = new Date(iso + "T12:00:00");
     return !iso || isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   }
+  function openCourts() { return E.openCourtList(state.settings); }
+  function courtsLabel() {
+    const open = openCourts(), closed = [1, 2, 3, 4, 5, 6, 7].filter(c => !open.includes(c));
+    const list = a => (a.length > 2 && a[a.length - 1] - a[0] === a.length - 1 ? `${a[0]}-${a[a.length - 1]}` : a.join(", "));
+    return closed.length ? `Courts ${list(open)} (${closed.join(", ")} closed)` : "All 7 courts";
+  }
   function uniqueName(name, exceptId) {
     let n = name, k = 2;
     while (state.players.some(p => p.id !== exceptId && p.name.toLowerCase() === n.toLowerCase())) n = `${name} (${k++})`;
@@ -1576,14 +1645,31 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   function renderSettings() {
     const s = state.settings;
-    $("setDate").value = s.date; $("setCourts").value = s.courts; $("setStart").value = s.start; $("setEnd").value = s.end;
+    $("setDate").value = s.date; $("setStart").value = s.start; $("setEnd").value = s.end;
+    const open = openCourts();
+    $("setCourts").innerHTML = [1, 2, 3, 4, 5, 6, 7].map(c => `<button type="button" id="crt-${c}" data-c="${c}" aria-pressed="${open.includes(c)}" aria-label="Court ${c} ${open.includes(c) ? "open" : "closed"}">${c}</button>`).join("");
     $("setBlock").value = String(s.block); $("setMin").value = s.minMinutes;
-    const line = `${s.start} to ${s.end} · ${s.courts} courts · ${s.block}-min blocks · everyone plays ${s.minMinutes}+ min`;
+    const line = `${s.start} to ${s.end} · ${courtsLabel()} · ${s.block}-min blocks · everyone plays ${s.minMinutes}+ min`;
     $("settingsSummary").textContent = "Session settings: " + line;
     $("sessionLine").textContent = `${dateLabel(s.date) || "Date not set"} · ${s.start} to ${s.end}`;
   }
   [["setDate", "date"], ["setStart", "start"], ["setEnd", "end"]].forEach(([id, k]) => $(id).addEventListener("change", e => { state.settings[k] = e.target.value; save(); renderSettings(); renderCapacity(); }));
-  [["setCourts", "courts", 1, 7], ["setBlock", "block", 5, 60], ["setMin", "minMinutes", 0, 240]].forEach(([id, k, lo, hi]) => $(id).addEventListener("change", e => {
+  $("setCourts").addEventListener("click", e => {
+    const b = e.target.closest("[data-c]");
+    if (!b) return;
+    const c = +b.dataset.c, closed = new Set(state.settings.closedCourts || []);
+    if (closed.has(c)) closed.delete(c);
+    else {
+      if (openCourts().length <= 1) { toast("Keep at least one court open"); return; }
+      closed.add(c);
+    }
+    state.settings.closedCourts = [...closed].sort();
+    state.settings.courts = 7;
+    if (state.schedule) state.stale = true;
+    save(); withFocus(() => { renderSettings(); renderCapacity(); });
+    toast(`Court ${c} ${closed.has(c) ? "closed" : "open"} · ${courtsLabel()}`);
+  });
+  [["setBlock", "block", 5, 60], ["setMin", "minMinutes", 0, 240]].forEach(([id, k, lo, hi]) => $(id).addEventListener("change", e => {
     const v = Math.max(lo, Math.min(hi, Math.round(+e.target.value || lo)));
     state.settings[k] = v; save(); renderSettings(); renderCapacity();
   }));
@@ -1674,7 +1760,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   function capacityInfo() {
     const n = state.players.length, nb = blockCount(), mb = minBlocks();
-    const max = E.maxPlayers(+state.settings.courts, nb, mb);
+    const max = E.maxPlayers(openCourts().length, nb, mb);
     const pairs = state.players.filter(p => p.partner).length / 2;
     const flags = state.players.filter(p => p.skillFlag).length;
     return { n, max, pairs, singles: n - 2 * pairs, flags, nb };
@@ -1686,9 +1772,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     if (!c.n) sub = "Import sign-ups to start";
     else if (c.nb === 0) { sub = "Check the session times: no blocks fit."; ok = false; }
     else if (c.n < 4) { sub = "Need at least 4 players."; }
-    else if (c.n > c.max) { over = true; ok = false; sub = `Max ${c.max} for everyone to get ${state.settings.minMinutes} min on ${state.settings.courts} courts. Remove ${c.n - c.max}.`; }
+    else if (c.n > c.max) { over = true; ok = false; sub = `Max ${c.max} for everyone to get ${state.settings.minMinutes} min on ${openCourts().length} courts. Remove ${c.n - c.max} or open another court.`; }
     else {
-      sub = `${c.pairs} pair${c.pairs === 1 ? "" : "s"}, ${c.singles} single${c.singles === 1 ? "" : "s"} · max ${c.max} on ${state.settings.courts} courts`;
+      sub = `${c.pairs} pair${c.pairs === 1 ? "" : "s"}, ${c.singles} single${c.singles === 1 ? "" : "s"} · max ${c.max} on ${openCourts().length} court${openCourts().length === 1 ? "" : "s"}${c.n === c.max ? " (full: everyone gets exactly " + state.settings.minMinutes + " min)" : ""}`;
       if (c.flags) sub += ` · ${c.flags} skill${c.flags === 1 ? "" : "s"} to check`;
     }
     $("capMain").textContent = main; $("capSub").textContent = sub;
@@ -1701,7 +1787,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const box = $("newWeekBox");
     if (ui.confirm === "newweek") {
       box.innerHTML = `<div class="confirm"><span>Clear this week's players and schedule?</span><button class="btn danger" id="newWeekYes">Clear everything</button><button class="btn" id="newWeekNo">Cancel</button></div>`;
-      $("newWeekYes").onclick = () => { const s = state.settings; state = freshState(); state.settings.courts = s.courts; state.settings.start = s.start; state.settings.end = s.end; state.settings.block = s.block; state.settings.minMinutes = s.minMinutes; ui.confirm = null; save(); renderAll(); toast("Cleared. Import next week's sign-ups."); };
+      $("newWeekYes").onclick = () => { const s = state.settings; state = freshState(); state.settings.start = s.start; state.settings.end = s.end; state.settings.block = s.block; state.settings.minMinutes = s.minMinutes; ui.confirm = null; save(); renderAll(); toast("Cleared. Import next week's sign-ups."); };
       $("newWeekNo").onclick = () => { ui.confirm = null; renderNewWeek(); };
     } else {
       box.innerHTML = `<button class="btn danger" id="newWeek">Start a new week</button>`;
@@ -1712,11 +1798,12 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   // ------------------------------------------------------------ schedule
   function makeSchedule(seed) {
     try {
-      state.schedule = E.generate(enginePlayers(), Object.assign({}, state.settings, { seed: seed == null ? null : seed, date: state.settings.date }));
+      state.schedule = E.generate(enginePlayers(), Object.assign({}, state.settings, { openCourts: openCourts(), seed: seed == null ? null : seed, date: state.settings.date }));
       state.stale = false; state.changes = []; state.history = [];
       ui.block = 0; ui.highlight = new Set();
       save(); setTab("schedule"); renderAll();
-      toast("Schedule made");
+      const chk = E.validate(state.schedule);
+      toast(chk.problems.length ? "Something's off with this schedule. Press Shuffle again before posting it." : "Schedule made");
     } catch (e) {
       if (e instanceof E.PadelError) { state.notes = [{ level: "warn", text: e.message }].concat(state.notes.filter(n => n.level !== "warn" || !n.text.includes("playing slots"))); renderNotes(); toast("Couldn't make the schedule, see the message at the top"); window.scrollTo({ top: 0, behavior: "smooth" }); }
       else { console.error(e); toast("Something went wrong making the schedule"); }
@@ -1817,8 +1904,12 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   function renderSummary() {
     const m = E.summary(state.schedule), set = state.schedule.settings;
+    const chk = E.validate(state.schedule);
     const stats = [
-      [m.ok ? "good" : "bad", "Play time", `${m.minMinutes}+ min each`, m.ok ? `Everyone gets ${set.minMinutes} min or more (${m.minBlocks} to ${m.maxBlocks} blocks)` : `Someone is under ${set.minMinutes} min`],
+      chk.problems.length
+        ? ["bad", "Rules check", `${chk.problems.length} problem${chk.problems.length === 1 ? "" : "s"}`, chk.problems.slice(0, 4).join(". ") + (chk.problems.length > 4 ? "..." : "")]
+        : ["good", "Rules check", "All passed", `Checked every block: nobody double-booked, pairs together, open courts full, no closed courts used, nobody missing, everyone ${set.minMinutes}+ min`],
+      [m.ok ? "good" : "bad", "Play time", `${m.minMinutes}+ min each`, m.ok ? (m.minBlocks === m.maxBlocks ? `Everyone gets exactly ${m.minMinutes} min (${m.minBlocks} blocks)` : `Everyone gets ${set.minMinutes} min or more (${m.minBlocks} to ${m.maxBlocks} blocks)`) : `Someone is under ${set.minMinutes} min`],
       ["", "Skill match", `±${m.avgGap.toFixed(2)}`, `Average gap between teams, biggest ${m.maxGap.toFixed(1)}. Widest game spread ${m.maxSpread}.`],
       ["", "Repeat opponents", String(m.repeatOpponents), "Pairs of players who meet more than once as opponents"],
       [m.repeatPartners ? "bad" : "good", "Repeat partners", String(m.repeatPartners), "Singles who get the same partner twice"],

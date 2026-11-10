@@ -10,9 +10,10 @@ Open `index.html` (or the private claude.ai link). Nothing to install.
    - Partners can be uni usernames (matched against each guest's email) or names, and people can list more than one (`JM3553, HP809`, `AB1 and CD2`). Small typos like swapped digits are caught.
    - Two people who ask for each other become a fixed pair. People linked by requests (e.g. two pairs who want to play each other, or three friends who all name each other) become a **friend group**: fixed pairs stay together, singles in the group rotate partners with each other, and the group shares a court a couple of times.
 2. Check the import messages (e.g. a partner who hasn't signed up, or a single-gender request with very few people to play with) and fix anything in the table.
-3. Press **Make schedule**.
-4. Press **Save PDF** and post it in the group chat: one court map per 15-minute block (numbers in yellow vs white, "Next on" under each court), then a "who plays when" list so everyone can find their number.
-5. Someone drops out? **Schedule → Someone dropped out**, pick them and the time. Only their slots change, filled from people sitting out (closest skill first, then whoever has played least). Copy the short changes message into the chat and save a fresh PDF.
+3. Courts not ours this week? Open **Session settings** and tap them off under "Courts we have" (e.g. 6 and 7). They show as CLOSED on the maps, and the player limit drops to match (5 courts = 40 players for an hour each). **Start a new week** reopens them all.
+4. Press **Make schedule**. The **Organiser check** shows a **Rules check** card: nobody double-booked, pairs together, open courts full, no closed court used, nobody missing, everyone gets their hour. It re-runs after every dropout.
+5. Press **Save PDF** and post it in the group chat: one court map per 15-minute block (numbers in yellow vs white, "Next on" under each court), then a "who plays when" list so everyone can find their number.
+6. Someone drops out? **Schedule → Someone dropped out**, pick them and the time. Only their slots change, filled from people sitting out (closest skill first, then whoever has played least). Copy the short changes message into the chat and save a fresh PDF.
 
 What it guarantees / tries for:
 - Everyone plays at least an hour (max 56 players on 7 courts). Over that it tells you how many to remove.

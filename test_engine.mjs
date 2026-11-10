@@ -338,3 +338,52 @@ test("friend groups: trio rotates, two pairs share a court, hour kept", () => {
     assert.ok(m.avgGap < 0.6);
   }
 });
+
+test("court closures: 6 and 7 closed", () => {
+  for (let seed = 0; seed < 4; seed++) {
+    const players = roster(40, 6, seed);
+    const s = E.generate(players, { closedCourts: [6, 7], seed });
+    checkBasic(s);
+    assert.equal(s.settings.courtsUsed, 5);
+    same(s.settings.openCourts, [1, 2, 3, 4, 5]);
+    for (const b of s.blocks) assert.ok(b.games.every(g => g.court <= 5), "no game on 6 or 7");
+    same([...new Set(Object.values(E.gamesPlayed(s)))], [4]);   // 40 on 5 courts: exactly an hour each
+    assert.equal(E.validate(s).problems.length, 0);
+    const m = D.mapModel(s, 0, {});
+    assert.equal(m.items.filter(i => i.s === "CLOSED").length, 2);
+    assert.equal(m.items.filter(i => i.s === "Next on:").length, 5);
+    assert.equal(m.items.filter(i => i.t === "circle").length, 20);
+  }
+  assert.throws(() => E.generate(roster(41, 0), { closedCourts: [6, 7], seed: 1 }), /Remove 1 player \(max 40\)/);
+  // closing a middle court: games skip it, strongest goes on the lowest open court
+  const s2 = E.generate(roster(24, 0, 3), { closedCourts: [1, 4], seed: 3 });
+  for (const b of s2.blocks) same(b.games.map(g => g.court), [2, 3, 5, 6, 7].slice(0, b.games.length));
+  same(E.openCourtList({ openCourts: [7, 2, 2, 9] }), [2, 7]);
+  assert.throws(() => E.generate(roster(8, 0), { openCourts: [], seed: 1 }), /All the courts are closed/);
+});
+
+test("validate: clean schedules pass, broken ones are caught", () => {
+  for (const [n, p] of [[56, 10], [40, 5], [13, 2], [9, 0]]) {
+    const s = E.generate(roster(n, p, 2), { seed: 2 });
+    same(E.validate(s).problems, [], `n=${n}`);
+    E.dropPlayers(s, ["Player 00", "Player 05"], s.blocks[3].time, 1);
+    same(E.validate(s).problems, [], `n=${n} after dropouts`);
+  }
+  const base = E.generate(roster(40, 4, 1), { seed: 1 });
+  const broken = fn => { const s = JSON.parse(JSON.stringify(base)); fn(s); return E.validate(s).problems.join(" | "); };
+  // double-booked
+  assert.match(broken(s => { const b = s.blocks[0]; b.games[1].teams[0][0] = b.games[0].teams[0][0]; }), /is on Court \d and Court \d/);
+  // pair split: swap one half of a fixed pair with someone in another game
+  assert.match(broken(s => {
+    const b = s.blocks.find(b => b.games.some(g => g.teams.flat().includes("Player 00")));
+    const g1 = b.games.find(g => g.teams.flat().includes("Player 00")), g2 = b.games.find(g => g !== g1);
+    const t = g1.teams.find(t => t.includes("Player 00")); const i = t.indexOf("Player 00");
+    [t[i], g2.teams[0][0]] = [g2.teams[0][0], t[i]];
+  }), /isn't on the same team as their partner/);
+  // missing player
+  assert.match(broken(s => { s.blocks[2].sittingOut = s.blocks[2].sittingOut.slice(1); }), /is missing/);
+  // game on a closed court
+  assert.match(broken(s => { s.settings.openCourts = [1, 2, 3, 4, 5, 6]; }), /Court 7, which is closed/);
+  // under an hour: take someone off court in all but one of their games
+  assert.match(broken(s => { s.settings.minBlocks = 8; s.settings.minMinutes = 120; }), /only plays \d+ min/);
+});
