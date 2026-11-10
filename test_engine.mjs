@@ -387,3 +387,85 @@ test("validate: clean schedules pass, broken ones are caught", () => {
   // under an hour: take someone off court in all but one of their games
   assert.match(broken(s => { s.settings.minBlocks = 8; s.settings.minMinutes = 120; }), /only plays \d+ min/);
 });
+
+test("game requests: partners split a fixed pair for one game only", () => {
+  for (let seed = 0; seed < 5; seed++) {
+    const players = roster(40, 6, seed);   // Player 00 + 01 are a fixed pair
+    const req = [{ a: "Player 00", b: "Player 30", type: "partners" }];
+    const s = E.generate(players, { closedCourts: [6, 7], seed, requests: req });
+    const st = E.requestStatus(s)[0];
+    assert.ok(st.met, "request met");
+    same([...new Set(Object.values(E.gamesPlayed(s)))], [4], "exact capacity: everyone 4 blocks");
+    same(E.validate(s).problems, []);
+    const blk = s.blocks.find(b => b.time === st.time);
+    assert.ok(blk.games.some(g => g.teams.flat().includes("Player 01")), "the other half still plays that block");
+    for (const b of s.blocks) {
+      if (b.time === st.time) continue;
+      for (const g of b.games) for (const t of g.teams) if (t.includes("Player 00")) assert.ok(t.includes("Player 01"), "back together in every other game");
+    }
+    const noBreaks = JSON.parse(JSON.stringify(s)); noBreaks.pairBreaks = [];
+    assert.match(E.validate(noBreaks).problems.join(" "), /isn't on the same team as their partner/);
+  }
+});
+
+test("game requests: opponents, same court, set time, impossible ones", () => {
+  const players = roster(40, 6, 2);
+  const s = E.generate(players, { seed: 2, requests: [
+    { a: "Player 00", b: "Player 20", type: "opponents", time: "15:15" },
+    { a: "Player 21", b: "Player 22", type: "court" },
+    { a: "Player 23", b: "Player 24", type: "partners" },
+  ] });
+  const st = E.requestStatus(s);
+  assert.ok(st.every(r => r.met), JSON.stringify(st));
+  assert.equal(st[0].time, "15:15");
+  same(E.validate(s).problems, []);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ a: "Player 00", b: "Player 01", type: "opponents" }] }), /already a fixed pair/);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ a: "Player 20", b: "Player 21", type: "partners", time: "14:00" }, { a: "Player 20", b: "Player 22", type: "court", time: "14:00" }] }), /two game requests at 14:00/);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ a: "Player 20", b: "Nobody", type: "court" }] }), /isn't playing this week/);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ a: "Player 20", b: "Player 21", type: "court", time: "13:00" }] }), /isn't a block time/);
+});
+
+test("swapPlayers: plain, sitting out, split pair, move partner, hour guard", () => {
+  const players = roster(36, 4, 4);   // 36 on 7 courts -> 28 on, 8 sit out per block
+  const fresh = () => E.generate(players, { seed: 4 });
+  const s0 = fresh(), t = s0.blocks[2].time, blk = s0.blocks[2];
+  const singlesOn = blk.games.flatMap(g => g.teams.flat()).filter(n => !players[n].partner);
+  // plain swap between two singles in different games
+  let s = fresh();
+  const g1 = blk.games.findIndex(g => g.teams.flat().includes(singlesOn[0]));
+  const other = singlesOn.find(n => blk.games.findIndex(g => g.teams.flat().includes(n)) !== g1);
+  let r = E.swapPlayers(s, t, singlesOn[0], other);
+  assert.ok(r.changes.length && !r.needs);
+  same(E.validate(s).problems, []);
+  // swap someone on court with someone sitting out (single, with games to spare)
+  s = fresh();
+  const counts = E.gamesPlayed(s);
+  const sitter = s.blocks[2].sittingOut.find(n => !players[n].partner);
+  const spare = singlesOn.find(n => counts[n] > s.settings.minBlocks);
+  if (sitter && spare) {
+    r = E.swapPlayers(s, t, spare, sitter);
+    assert.match(r.changes[0], /in for/);
+    same(E.validate(s).problems, []);
+  }
+  // split a fixed pair: asks first, then splits for that game only
+  s = fresh();
+  const pairOn = (s.blocks[2].games.flatMap(g => g.teams).find(tm => players[tm[0]].partner === tm[1]) || []).slice();
+  if (pairOn.length) {
+    const target = s.blocks[2].games.flatMap(g => g.teams.flat()).find(n => !players[n].partner && !pairOn.includes(n));
+    r = E.swapPlayers(s, t, pairOn[0], target);
+    assert.equal(r.needs, "pair");
+    same(E.validate(s).problems, [], "nothing changed yet");
+    r = E.swapPlayers(s, t, pairOn[0], target, { splitPairs: true });
+    same(E.validate(s).problems, [], "recorded split passes");
+    assert.ok(s.pairBreaks.some(pb => pb.time === t));
+    // move partner too
+    const s2 = fresh();
+    const r2 = E.swapPlayers(s2, t, pairOn[0], target);
+    if (r2.canMove) { E.swapPlayers(s2, t, pairOn[0], target, { movePartners: true }); same(E.validate(s2).problems, []); }
+  }
+  // hour guard: 40 players on 5 courts, everyone exactly 4 -> nobody can be swapped out
+  const tight = E.generate(roster(40, 0, 1), { closedCourts: [6, 7], seed: 1 });
+  const tb = tight.blocks[0], onc = tb.games[0].teams[0][0], off = tb.sittingOut[0];
+  assert.throws(() => E.swapPlayers(tight, tb.time, onc, off), /would only play/);
+  assert.throws(() => E.swapPlayers(tight, tb.time, off, tb.sittingOut[1]), /both sitting out/);
+});

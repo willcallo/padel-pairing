@@ -146,6 +146,14 @@ details.settings[open] summary::before { transform: translateY(-3px) rotate(45de
 details.settings .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 12px; padding-bottom: 4px; }
 label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .courts-field { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.req-row select { min-width: 0; }
+.req-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.req-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--fill); font-size: 14px; }
+.req-list .when { color: var(--muted); font-size: 13px; }
+.pick { border: 0; background: var(--surface); color: var(--ink); border-radius: 8px; padding: 3px 8px; margin: 1px 0; cursor: pointer; font: inherit; box-shadow: inset 0 0 0 1px var(--line); }
+.pick:hover { box-shadow: inset 0 0 0 1.5px var(--tint); }
+.pick[aria-pressed="true"] { background: var(--ball); color: var(--ball-ink); box-shadow: inset 0 0 0 1.5px var(--ball-ink); }
+.edit-hint { font-size: 14px; color: var(--muted); padding: 2px 2px 6px; }
 .court-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .court-chips button { min-width: 44px; height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--fill-strong); color: var(--faint); font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: line-through; }
 .court-chips button[aria-pressed="true"] { background: var(--court); color: #fff; text-decoration: none; }
@@ -293,6 +301,25 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       </form>
     </div>
 
+    <div class="panel" id="reqPanel">
+      <h2>Game requests</h2>
+      <p class="hint">Put two people in the same game once, e.g. as partners. If one of them is in a fixed pair, that pair is split for that one game only, and the other half still plays at that time.</p>
+      <div class="row req-row">
+        <select id="reqA" class="grow" aria-label="First person"></select>
+        <select id="reqB" class="grow" aria-label="Second person"></select>
+      </div>
+      <div class="row req-row">
+        <div class="seg" id="reqType" role="group" aria-label="How">
+          <button class="btn" type="button" data-t="partners" aria-pressed="true">Partners</button>
+          <button class="btn" type="button" data-t="opponents" aria-pressed="false">Opponents</button>
+          <button class="btn" type="button" data-t="court" aria-pressed="false">Same court</button>
+        </div>
+        <select id="reqTime" aria-label="When"></select>
+        <button class="btn primary" type="button" id="reqAdd">Add request</button>
+      </div>
+      <ul class="req-list" id="reqList"></ul>
+    </div>
+
     <div class="capacity" id="capacity">
       <div class="stats"><strong id="capMain">0 players</strong><span class="small" id="capSub">Import sign-ups to start</span></div>
       <button class="btn ball big" id="makeSchedule" disabled>Make schedule</button>
@@ -327,11 +354,13 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
           <div class="seg" role="group" aria-label="Show courts as">
             <button class="btn" id="viewMap" aria-pressed="true">Map</button>
             <button class="btn" id="viewList" aria-pressed="false">List</button>
+            <button class="btn" id="viewEdit" aria-pressed="false">Edit</button>
           </div>
         </div>
         <div class="blocks" id="blockPicker" role="group" aria-label="Pick a time"></div>
         <div class="map-box" id="mapBox"></div>
         <div class="listview" id="listBox" hidden></div>
+        <div id="editPrompt" class="confirm" hidden></div>
       </div>
 
       <div class="panel">
@@ -383,6 +412,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   const W_FRIEND = 6.0;   // bonus per pair of friend-group members on the same court (until they've shared 2 games)
   const W_FRIEND_PART = 8.0; // bonus when two friend-group singles partner up (repeat-partner cost still applies)
   const FRIEND_TARGET = 2;
+  const W_REQ = 500.0;    // game requests (opponents / same court): far above every other cost
   const DROP_EXTRA_GAME = 0.6;
   const RESTARTS = 2, MAX_ATTEMPTS = 20;
 
@@ -450,12 +480,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return d;
   }
 
-  function select(units, hist, slots, blocksLeft, minBlocks, rng, ctx) {
+  function select(units, hist, slots, blocksLeft, minBlocks, rng, ctx, forced) {
+    forced = forced || new Set();
     let maxG = 0;
     for (const n in hist.games) maxG = Math.max(maxG, hist.games[n]);
-    const must = n => { const need = minBlocks - hist.games[n]; return need > 0 && need >= blocksLeft; };
-    const score = n => (must(n) ? 10000 : 0) + (maxG - hist.games[n]) * 100 + (hist.streak[n] >= 2 ? 10 : 0) + rng();
-    const pairs = units.filter(u => u.length === 2).map(u => [2 * score(u[0]), u]).sort((a, b) => b[0] - a[0]);
+    const mustPlay = n => { const need = minBlocks - hist.games[n]; return need > 0 && need >= blocksLeft; };
+    const must = n => mustPlay(n) || forced.has(n);
+    const score = n => (forced.has(n) ? 50000 : 0) + (mustPlay(n) ? 10000 : 0) + (maxG - hist.games[n]) * 100 + (hist.streak[n] >= 2 ? 10 : 0) + rng();
+    const pairs = units.filter(u => u.length === 2).map(u => [score(u[0]) + score(u[1]), u]).sort((a, b) => b[0] - a[0]);
     const singles = units.filter(u => u.length === 1).map(u => [score(u[0]), u[0]]).sort((a, b) => b[0] - a[0]);
     const pv = [0], sv = [0];
     for (const [v] of pairs) pv.push(pv[pv.length - 1] + v);
@@ -518,7 +550,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return [selPairs, selSingles];
   }
 
-  function optimise(fixedPairs, singles, ctx, hist, rng) {
+  function optimise(fixedPairs, singles, ctx, hist, rng, reqHere) {
+    const reqs = (reqHere || []).filter(r => r.type !== "partners");
     const { skill, gender, single, anySingle, group, anyGroup } = ctx;
     const opp = hist.opp, part = hist.part, together = hist.together;
     const g = (m, k) => m.get(k) || 0;
@@ -560,6 +593,15 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
           }
           if (!fixed[games[gi][0]] && group[a0] && group[a0] === group[a1]) c -= W_FRIEND_PART;
           if (!fixed[games[gi][1]] && group[b0] && group[b0] === group[b1]) c -= W_FRIEND_PART;
+        }
+        if (reqs.length) {
+          const ps = [a0, a1, b0, b1];
+          for (const r of reqs) {
+            const ia = ps.indexOf(r.a), ib = ps.indexOf(r.b);
+            if (ia < 0 || ib < 0) continue;
+            if (r.type === "opponents" && (ia < 2) === (ib < 2)) continue;
+            c -= W_REQ;
+          }
         }
         return c;
       };
@@ -619,7 +661,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return { names, skill, gender, single, anySingle, group, anyGroup };
   }
 
-  function generateOnce(players, courtsUsed, times, minBlocks, rng, openCourts) {
+  function generateOnce(players, courtsUsed, times, minBlocks, rng, openCourts, reqs) {
+    reqs = reqs || [];
+    const pairBreaks = [];
     const ctx = makeCtx(players);
     const names = ctx.names;
     const units = [], seen = new Set();
@@ -634,10 +678,28 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const nCand = ctx.anySingle || ctx.anyGroup ? 8 : 4;
     const blocks = [];
     times.forEach((t, b) => {
+      // Game requests in this block: force those people on; partner requests become a locked team,
+      // and any fixed pair they break is split for this block only (the other half still plays).
+      const here = reqs.filter(r => r.block === b);
+      let blockUnits = units;
+      const forced = new Set(here.flatMap(r => [r.a, r.b]));
+      const partnerReqs = here.filter(r => r.type === "partners");
+      if (partnerReqs.length) {
+        const touched = new Set(partnerReqs.flatMap(r => [r.a, r.b]));
+        blockUnits = [];
+        for (const u of units) {
+          if (!u.some(x => touched.has(x))) { blockUnits.push(u); continue; }
+          if (u.length === 2) {
+            pairBreaks.push({ time: t, pair: u.slice() });
+            u.forEach(x => { if (!touched.has(x)) { blockUnits.push([x]); forced.add(x); } });
+          }
+        }
+        partnerReqs.forEach(r => blockUnits.push([r.a, r.b]));
+      }
       let best = null;
-      for (let c = 0; c < nCand; c++) {
-        const [pairs, singles] = select(units, hist, courtsUsed * 4, times.length - b, minBlocks, rng, ctx);
-        const res = optimise(pairs, singles, ctx, hist, rng);
+      for (let c = 0; c < (here.length ? Math.max(nCand, 6) : nCand); c++) {
+        const [pairs, singles] = select(blockUnits, hist, courtsUsed * 4, times.length - b, minBlocks, rng, ctx, forced);
+        const res = optimise(pairs, singles, ctx, hist, rng, here);
         if (!best || res.cost < best.cost) best = res;
       }
       const sum = gm => gm.ta.concat(gm.tb).reduce((a, x) => a + ctx.skill[x], 0);
@@ -664,7 +726,56 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       }
       blocks.push({ time: t, games: outGames, sittingOut: names.filter(n => !playing.has(n)).sort(byName) });
     });
-    return { blocks, hist };
+    return { blocks, hist, pairBreaks };
+  }
+
+  // Where a request happened in a built schedule: {court} if met, else null.
+  function requestMet(blocks, r) {
+    const blk = blocks.find(x => x.time === r.time);
+    if (!blk) return null;
+    for (const g of blk.games) {
+      const [ta, tb] = g.teams;
+      const inA = x => ta.includes(x), inB = x => tb.includes(x);
+      if (!((inA(r.a) || inB(r.a)) && (inA(r.b) || inB(r.b)))) continue;
+      const sameTeam = (inA(r.a) && inA(r.b)) || (inB(r.a) && inB(r.b));
+      if (r.type === "partners" && !sameTeam) return null;
+      if (r.type === "opponents" && sameTeam) return null;
+      return { court: g.court };
+    }
+    return null;
+  }
+
+  const REQ_WORD = { partners: "partners", opponents: "opponents", court: "on the same court" };
+  // Check requests up front and give "any time" ones a block. Throws PadelError with a plain reason.
+  function placeRequests(requests, players, times, slots, rng) {
+    const out = [], busy = {};
+    const mark = (n, b) => { (busy[n] = busy[n] || new Set()).add(b); };
+    for (const r of requests) {
+      if (!players[r.a] || !players[r.b]) throw new PadelError(`A game request names someone who isn't playing this week (${!players[r.a] ? r.a : r.b}).`);
+      if (r.a === r.b) throw new PadelError(`A game request has ${r.a} twice.`);
+      if (!REQ_WORD[r.type]) throw new PadelError(`Unknown request type "${r.type}".`);
+      if (players[r.a].partner === r.b && r.type !== "court") throw new PadelError(`${r.a} and ${r.b} are already a fixed pair, so they can't be ${r.type === "partners" ? "made partners" : "opponents"}. Remove that request.`);
+      if (r.time && !times.includes(r.time)) throw new PadelError(`The request for ${r.a} and ${r.b} is at ${r.time}, which isn't a block time.`);
+    }
+    for (const r of requests.filter(r => r.time)) {
+      const b = times.indexOf(r.time);
+      for (const n of [r.a, r.b]) if (busy[n] && busy[n].has(b)) throw new PadelError(`${n} is in two game requests at ${r.time}. Move one of them to another time.`);
+      mark(r.a, b); mark(r.b, b);
+      out.push(Object.assign({}, r, { block: b }));
+    }
+    for (const r of requests.filter(r => !r.time)) {
+      const options = times.map((_, i) => i).filter(i => !(busy[r.a] && busy[r.a].has(i)) && !(busy[r.b] && busy[r.b].has(i)));
+      if (!options.length) throw new PadelError(`No time left for the request with ${r.a} and ${r.b}: they're already in requests in every block.`);
+      const b = options[Math.floor(rng() * options.length)];
+      mark(r.a, b); mark(r.b, b);
+      out.push(Object.assign({}, r, { block: b, time: times[b] }));
+    }
+    times.forEach((t, b) => {
+      const ppl = new Set();
+      out.filter(r => r.block === b).forEach(r => [r.a, r.b].forEach(n => { ppl.add(n); if (players[n].partner) ppl.add(players[n].partner); }));
+      if (ppl.size > slots) throw new PadelError(`Too many game requests at ${t} to fit on the open courts.`);
+    });
+    return out;
   }
 
   const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
@@ -698,12 +809,20 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     if (!open.length) throw new PadelError("All the courts are closed. Open at least one in Session settings.");
     const used = capacityCheck(Object.keys(players).length, open.length, times.length, minBlocks, opts.minMinutes);
     let seed = opts.seed == null ? Math.floor(Math.random() * 1e6) + 1 : +opts.seed;
-    let res = null, attempt = 0;
+    const requests = (opts.requests || []).map(r => ({ a: r.a, b: r.b, type: r.type, time: r.time || null }));
+    placeRequests(requests, players, times, used * 4, makeRng(seed));   // throws early on impossible requests
+    let res = null, attempt = 0, placed = [], hourOk = false;
     for (; attempt < MAX_ATTEMPTS; attempt++) {
-      res = generateOnce(players, used, times, minBlocks, makeRng(seed + attempt), open);
-      if (Math.min(...Object.values(res.hist.games)) >= minBlocks) break;
+      placed = placeRequests(requests, players, times, used * 4, makeRng(seed + attempt + 7919));
+      res = generateOnce(players, used, times, minBlocks, makeRng(seed + attempt), open, placed);
+      hourOk = Math.min(...Object.values(res.hist.games)) >= minBlocks;
+      if (hourOk && placed.every(r => requestMet(res.blocks, r))) break;
     }
-    if (attempt === MAX_ATTEMPTS) throw new PadelError(`Couldn't find a schedule giving everyone ${opts.minMinutes} minutes. Try Shuffle again.`);
+    if (attempt === MAX_ATTEMPTS) {
+      if (!hourOk) throw new PadelError(`Couldn't find a schedule giving everyone ${opts.minMinutes} minutes. Try Shuffle again.`);
+      const bad = placed.find(r => !requestMet(res.blocks, r));
+      throw new PadelError(`Couldn't fit the request for ${bad.a} and ${bad.b} (${REQ_WORD[bad.type]}${bad.time ? " at " + bad.time : ""}). Try a different time, or remove it.`);
+    }
     const pl = {};
     for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any", group: players[n].group || null };
     return {
@@ -711,6 +830,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       players: pl,
       numbers: assignNumbers(Object.keys(players)),
       blocks: res.blocks,
+      requests: placed.map(r => ({ a: r.a, b: r.b, type: r.type, time: r.time, wantedTime: requests.find(q => q.a === r.a && q.b === r.b && q.type === r.type).time })),
+      pairBreaks: res.pairBreaks,
     };
   }
 
@@ -861,11 +982,74 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return out;
   }
 
+  // Each game request and whether it still holds (dropouts or swaps can undo one).
+  function requestStatus(s) {
+    return (s.requests || []).map(r => {
+      const gone = [r.a, r.b].filter(n => s.players[n] && s.players[n].droppedFrom != null && times(s).indexOf(s.players[n].droppedFrom) <= times(s).indexOf(r.time));
+      const m = requestMet(s.blocks, r);
+      return Object.assign({}, r, { met: !!m, court: m ? m.court : null, why: m ? "" : gone.length ? `${gone.join(" and ")} dropped out` : "changed by a swap" });
+    });
+  }
+
+  function locate(blk, n) {
+    for (const g of blk.games) for (let ti = 0; ti < 2; ti++) { const k = g.teams[ti].indexOf(n); if (k >= 0) return { g, ti, k }; }
+    return blk.sittingOut.includes(n) ? { sit: true } : null;
+  }
+
+  // Swap two people's places in one block. Doesn't change anything and returns {needs:"pair", pairs, canMove}
+  // when it would split a fixed pair and neither opts.splitPairs nor opts.movePartners is set.
+  function swapPlayers(s, time, a, b, opts) {
+    opts = opts || {};
+    const bi = times(s).indexOf(time);
+    if (bi < 0) throw new PadelError(`${time} isn't a block time`);
+    a = resolveName(s, a); b = resolveName(s, b);
+    if (a === b) throw new PadelError("Pick two different people");
+    for (const n of [a, b]) if (droppedBy(s, n, bi)) throw new PadelError(`${n} has dropped out by ${time}`);
+    const blk = s.blocks[bi], pa = locate(blk, a), pb = locate(blk, b);
+    if (!pa || !pb) throw new PadelError("Couldn't find one of them at that time");
+    if (pa.sit && pb.sit) throw new PadelError(`${a} and ${b} are both sitting out at ${time}, so there's nothing to swap`);
+    if (!pa.sit && !pb.sit && pa.g === pb.g && pa.ti === pb.ti) throw new PadelError(`${a} and ${b} are already partners at ${time}`);
+    const brokenNow = (x, y) => (s.pairBreaks || []).some(pb2 => pb2.time === time && pb2.pair.includes(x) && pb2.pair.includes(y));
+    const pairs = [];
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const q = s.players[x].partner;
+      if (q && q !== y && s.players[q] && !droppedBy(s, q, bi) && !brokenNow(x, q)) pairs.push([x, q]);
+    }
+    const canMove = !pa.sit && !pb.sit && pa.g !== pb.g;
+    if (pairs.length && !opts.splitPairs && !opts.movePartners) return { needs: "pair", pairs, canMove };
+    const counts = gamesPlayed(s), min = s.settings.minBlocks;
+    const lines = [];
+    if (opts.movePartners) {
+      if (!canMove) throw new PadelError("Moving partners too only works when both people are on court in different games");
+      const ta = pa.g.teams[pa.ti], tb = pb.g.teams[pb.ti];
+      pa.g.teams[pa.ti] = tb; pb.g.teams[pb.ti] = ta;
+      lines.push(`${time}: ${ta.filter(Boolean).join(" & ")} (now C${pb.g.court}) swapped with ${tb.filter(Boolean).join(" & ")} (now C${pa.g.court})`);
+      return { changes: lines, moved: ta.concat(tb).filter(Boolean) };
+    }
+    if (pa.sit || pb.sit) {
+      const off = pa.sit ? b : a, on = pa.sit ? a : b, spot = pa.sit ? pb : pa;
+      if (counts[off] - 1 < min) throw new PadelError(`${off} would only play ${(counts[off] - 1) * s.settings.block} min if they sat out at ${time} (needs ${s.settings.minMinutes}). Swap them with someone on court instead.`);
+      spot.g.teams[spot.ti][spot.k] = on;
+      blk.sittingOut = blk.sittingOut.filter(x => x !== on).concat([off]).sort(byName);
+      lines.push(`${time} C${spot.g.court}: ${on} in for ${off} (${off} sits out)`);
+    } else {
+      pa.g.teams[pa.ti][pa.k] = b; pb.g.teams[pb.ti][pb.k] = a;
+      lines.push(pa.g === pb.g ? `${time} C${pa.g.court}: ${a} and ${b} swapped teams` : `${time}: ${a} (now C${pb.g.court}) swapped with ${b} (now C${pa.g.court})`);
+    }
+    if (pairs.length) {
+      s.pairBreaks = s.pairBreaks || [];
+      pairs.forEach(pr => s.pairBreaks.push({ time, pair: pr }));
+      lines.push(`(${pairs.map(pr => pr.join(" & ")).join(", ")} split for this game only)`);
+    }
+    return { changes: lines, moved: [a, b] };
+  }
+
   // Hard rules every schedule must keep. Returns {rules, problems: [plain-English strings]}.
   function validate(s) {
     const P = s.players, set = s.settings, problems = [];
     const open = new Set(openCourtList(set.openCourts ? { openCourts: set.openCourts } : { courts: set.courts }));
     const active = (n, b) => !droppedBy(s, n, b);
+    const splitOk = (time, x, y) => (s.pairBreaks || []).some(pb => pb.time === time && pb.pair.includes(x) && pb.pair.includes(y));
     s.blocks.forEach((blk, b) => {
       const where = {};
       let places = 0;
@@ -882,7 +1066,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         }
         for (const t of g.teams) for (const x of t) {
           const q = x && P[x] && P[x].partner;
-          if (q && P[q] && active(q, b) && !t.includes(q)) problems.push(`${blk.time}: ${x} isn't on the same team as their partner ${q}`);
+          if (q && P[q] && active(q, b) && !t.includes(q) && !splitOk(blk.time, x, q)) problems.push(`${blk.time}: ${x} isn't on the same team as their partner ${q}`);
         }
       }
       if (places !== set.courtsUsed * 4) problems.push(`${blk.time}: ${places} places on court, expected ${set.courtsUsed * 4}`);
@@ -892,7 +1076,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         if (!on && !sit) problems.push(`${blk.time}: ${n} is missing (not on court or sitting out)`);
         if (on && sit) problems.push(`${blk.time}: ${n} is on court and sitting out`);
         const q = P[n].partner;
-        if (q && P[q] && active(q, b) && n < q && on !== (where[q] != null)) problems.push(`${blk.time}: ${n} and ${q} are a pair but only one of them is on court`);
+        if (q && P[q] && active(q, b) && n < q && on !== (where[q] != null) && !splitOk(blk.time, n, q)) problems.push(`${blk.time}: ${n} and ${q} are a pair but only one of them is on court`);
       }
     });
     const counts = gamesPlayed(s);
@@ -930,7 +1114,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return lines.join("\n") + "\n";
   }
 
-  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, validate, openCourtList, gamesPlayed, playerSlots,
+  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, validate, openCourtList, swapPlayers, requestStatus, gamesPlayed, playerSlots,
     renderText, maxPlayers, wantsSingle, byName, gamePlayers, consts: { W_TEAM, W_SPREAD, W_OPP, W_PART, W_GENDER, DROP_EXTRA_GAME } };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
@@ -1493,10 +1677,10 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   }
   function freshState() {
     return { v: 1, settings: { date: nextWednesday(), courts: 7, closedCourts: [], start: "14:00", end: "16:00", block: 15, minMinutes: 60 },
-      players: [], notes: [], example: false, schedule: null, stale: false, changes: [], history: [] };
+      players: [], notes: [], example: false, requests: [], schedule: null, stale: false, changes: [], history: [] };
   }
   let state = freshState();
-  let ui = { tab: "signups", block: 0, mode: "map", highlight: new Set(), confirm: null, search: "" };
+  let ui = { tab: "signups", block: 0, mode: "map", highlight: new Set(), confirm: null, search: "", pick: null, pending: null };
   let nextId = 1;
   const pid = () => "p" + (nextId++) + Math.random().toString(36).slice(2, 6);
 
@@ -1591,9 +1775,59 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     }
     return out;
   }
+  function engineRequests() {
+    return (state.requests || []).map(r => ({ a: byId(r.a) && byId(r.a).name, b: byId(r.b) && byId(r.b).name, type: r.type, time: r.time || null }))
+      .filter(r => r.a && r.b);
+  }
+  let reqType = "partners";
+  function renderRequests() {
+    const sorted = state.players.slice().sort((a, b) => E.byName(a.name, b.name));
+    const opts = sorted.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    for (const [id, label] of [["reqA", "First person"], ["reqB", "Second person"]]) {
+      const keep = $(id).value;
+      $(id).innerHTML = `<option value="">${label}</option>` + opts;
+      if (keep && byId(keep)) $(id).value = keep;
+    }
+    let ts = [];
+    try { ts = E.blockTimes(state.settings.start, state.settings.end, +state.settings.block); } catch (e) { /* bad times */ }
+    const keepT = $("reqTime").value;
+    $("reqTime").innerHTML = `<option value="">Any time</option>` + ts.map(t => `<option value="${t}">At ${t}</option>`).join("");
+    if (ts.includes(keepT)) $("reqTime").value = keepT;
+    document.querySelectorAll("#reqType [data-t]").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === reqType));
+    const word = { partners: "partners", opponents: "opponents", court: "on the same court" };
+    state.requests = (state.requests || []).filter(r => byId(r.a) && byId(r.b));
+    $("reqList").innerHTML = state.requests.map(r => {
+      const A = byId(r.a), B = byId(r.b);
+      const pairNote = [A, B].filter(x => x.partner && x.partner !== (x === A ? B.id : A.id)).map(x => `${x.name} & ${byId(x.partner).name} split for that game`);
+      return `<li><span><b>${esc(A.name)}</b> & <b>${esc(B.name)}</b> ${word[r.type]} <span class="when">· ${r.time ? "at " + r.time : "any time"}${pairNote.length && r.type === "partners" ? " · " + esc(pairNote.join(", ")) : ""}</span></span>
+        <button type="button" class="icon-btn" data-req="${r.id}" aria-label="Remove request">&times;</button></li>`;
+    }).join("");
+    $("reqPanel").hidden = state.players.length < 2;
+  }
+  $("reqType").addEventListener("click", e => { const b = e.target.closest("[data-t]"); if (!b) return; reqType = b.dataset.t; renderRequests(); });
+  $("reqAdd").addEventListener("click", () => {
+    const a = $("reqA").value, b = $("reqB").value;
+    if (!a || !b) { toast("Pick two people first"); return; }
+    if (a === b) { toast("Pick two different people"); return; }
+    const A = byId(a), B = byId(b);
+    if (A.partner === b && reqType !== "court") { toast(`${A.name} and ${B.name} are already a fixed pair`); return; }
+    state.requests.push({ id: pid(), a, b, type: reqType, time: $("reqTime").value || null });
+    $("reqA").value = ""; $("reqB").value = "";
+    if (state.schedule) state.stale = true;
+    save(); renderRequests(); renderCapacity();
+    toast(`Request added. Press ${state.schedule ? "Shuffle again" : "Make schedule"} to use it.`);
+  });
+  $("reqList").addEventListener("click", e => {
+    const b = e.target.closest("[data-req]");
+    if (!b) return;
+    state.requests = state.requests.filter(r => r.id !== b.dataset.req);
+    if (state.schedule) state.stale = true;
+    save(); renderRequests(); renderCapacity();
+  });
+
   function playersChanged() {
     if (state.schedule) state.stale = true;
-    save(); renderPlayers(); renderCapacity(); renderTabs();
+    save(); renderPlayers(); renderRequests(); renderCapacity(); renderTabs();
   }
   function withFocus(fn) {
     const id = document.activeElement && document.activeElement.id;
@@ -1651,6 +1885,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     $("setBlock").value = String(s.block); $("setMin").value = s.minMinutes;
     const line = `${s.start} to ${s.end} · ${courtsLabel()} · ${s.block}-min blocks · everyone plays ${s.minMinutes}+ min`;
     $("settingsSummary").textContent = "Session settings: " + line;
+    if (typeof renderRequests === "function" && $("reqTime")) renderRequests();
     $("sessionLine").textContent = `${dateLabel(s.date) || "Date not set"} · ${s.start} to ${s.end}`;
   }
   [["setDate", "date"], ["setStart", "start"], ["setEnd", "end"]].forEach(([id, k]) => $(id).addEventListener("change", e => { state.settings[k] = e.target.value; save(); renderSettings(); renderCapacity(); }));
@@ -1720,6 +1955,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     if (b.dataset.act === "ungroup") { leaveGroup(p); playersChanged(); toast(`${p.name} taken out of the group`); }
     if (b.dataset.act === "del") {
       leaveGroup(p);
+      state.requests = (state.requests || []).filter(r => r.a !== p.id && r.b !== p.id);
       state.players.forEach(q => { if (q.partner === p.id) q.partner = null; });
       state.players = state.players.filter(q => q !== p);
       playersChanged(); toast(`Removed ${p.name}`);
@@ -1776,6 +2012,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     else {
       sub = `${c.pairs} pair${c.pairs === 1 ? "" : "s"}, ${c.singles} single${c.singles === 1 ? "" : "s"} · max ${c.max} on ${openCourts().length} court${openCourts().length === 1 ? "" : "s"}${c.n === c.max ? " (full: everyone gets exactly " + state.settings.minMinutes + " min)" : ""}`;
       if (c.flags) sub += ` · ${c.flags} skill${c.flags === 1 ? "" : "s"} to check`;
+      const nr = (state.requests || []).length;
+      if (nr) sub += ` · ${nr} game request${nr === 1 ? "" : "s"}`;
     }
     $("capMain").textContent = main; $("capSub").textContent = sub;
     cap.classList.toggle("over", over);
@@ -1798,7 +2036,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   // ------------------------------------------------------------ schedule
   function makeSchedule(seed) {
     try {
-      state.schedule = E.generate(enginePlayers(), Object.assign({}, state.settings, { openCourts: openCourts(), seed: seed == null ? null : seed, date: state.settings.date }));
+      state.schedule = E.generate(enginePlayers(), Object.assign({}, state.settings, { openCourts: openCourts(), requests: engineRequests(), seed: seed == null ? null : seed, date: state.settings.date }));
       state.stale = false; state.changes = []; state.history = [];
       ui.block = 0; ui.highlight = new Set();
       save(); setTab("schedule"); renderAll();
@@ -1824,22 +2062,70 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     $("schedMeta").textContent = `${dateLabel(s.settings.date)} · ${Object.keys(s.players).length} players · ${s.settings.courtsUsed} courts`;
     if (ui.block >= s.blocks.length) ui.block = 0;
     $("blockPicker").innerHTML = s.blocks.map((b, i) => `<button type="button" id="blk-${i}" data-b="${i}" aria-pressed="${i === ui.block}">${b.time}</button>`).join("");
-    $("viewMap").setAttribute("aria-pressed", ui.mode === "map"); $("viewList").setAttribute("aria-pressed", ui.mode === "list");
-    $("mapBox").hidden = ui.mode !== "map"; $("listBox").hidden = ui.mode !== "list";
+    $("viewMap").setAttribute("aria-pressed", ui.mode === "map"); $("viewList").setAttribute("aria-pressed", ui.mode === "list"); $("viewEdit").setAttribute("aria-pressed", ui.mode === "edit");
+    $("mapBox").hidden = ui.mode !== "map"; $("listBox").hidden = ui.mode === "map";
+    if (ui.mode !== "edit") { ui.pick = null; ui.pending = null; }
+    renderEditPrompt();
     const blk = s.blocks[ui.block];
     if (ui.mode === "map") {
       $("mapBox").innerHTML = D.toSVG(D.mapModel(s, ui.block, { highlight: ui.highlight, dateLabel: shortDate(s.settings.date) }), `Courts at ${blk.time}`);
     } else {
       const N = s.numbers;
-      const nm = (x, cls) => (x ? `<span class="chip-n ${cls}">${N[x]}</span>${esc(x)}` : `<b style="color:var(--warn)">needs 1 player</b>`);
-      $("listBox").innerHTML = blk.games.map(g => `<div class="g"><span class="c">C${g.court}</span><span>${g.teams[0].map(x => nm(x, "y")).join(" & ")}<span class="vs">vs</span>${g.teams[1].map(x => nm(x, "w")).join(" & ")}</span></div>`).join("")
-        + (blk.sittingOut.length ? `<div class="sit"><b>Sitting out:</b> ${blk.sittingOut.map(x => `${N[x]} ${esc(x)}`).join(", ")}</div>` : "");
+      const edit = ui.mode === "edit";
+      const nm = (x, cls) => {
+        if (!x) return `<b style="color:var(--warn)">needs 1 player</b>`;
+        const inner = `<span class="chip-n ${cls}">${N[x]}</span>${esc(x)}`;
+        return edit ? `<button type="button" class="pick" data-n="${esc(x)}" aria-pressed="${ui.pick === x}">${inner}</button>` : inner;
+      };
+      const sitName = x => (edit ? `<button type="button" class="pick" data-n="${esc(x)}" aria-pressed="${ui.pick === x}">${N[x]} ${esc(x)}</button>` : `${N[x]} ${esc(x)}`);
+      const hint = edit ? `<div class="edit-hint">${ui.pick ? `Now tap who ${esc(ui.pick)} should swap with at ${blk.time}.` : `Tap two people to swap their places at ${blk.time}. Nothing else moves.`}</div>` : "";
+      $("listBox").innerHTML = hint + blk.games.map(g => `<div class="g"><span class="c">C${g.court}</span><span>${g.teams[0].map(x => nm(x, "y")).join(" & ")}<span class="vs">vs</span>${g.teams[1].map(x => nm(x, "w")).join(" & ")}</span></div>`).join("")
+        + (blk.sittingOut.length ? `<div class="sit"><b>Sitting out:</b> ${blk.sittingOut.map(sitName).join(edit ? " " : ", ")}</div>` : "");
     }
     renderShuffle(); renderDrop(); renderChanges(); renderSummary(); renderIndex();
   }
   $("blockPicker").addEventListener("click", e => { const b = e.target.closest("[data-b]"); if (!b) return; ui.block = +b.dataset.b; withFocus(renderSchedule); });
   $("viewMap").addEventListener("click", () => { ui.mode = "map"; renderSchedule(); });
   $("viewList").addEventListener("click", () => { ui.mode = "list"; renderSchedule(); });
+  $("viewEdit").addEventListener("click", () => { ui.mode = "edit"; renderSchedule(); });
+
+  // ---- manual swaps
+  function applySwap(a, b, opts) {
+    const s = state.schedule, time = s.blocks[ui.block].time;
+    const snapshot = JSON.stringify({ schedule: s, changes: state.changes });
+    let res;
+    try { res = E.swapPlayers(s, time, a, b, opts); }
+    catch (e) { toast(e.message || "Couldn't swap them"); ui.pick = null; renderSchedule(); return; }
+    if (res.needs === "pair") { ui.pending = { a, b, pairs: res.pairs, canMove: res.canMove }; ui.pick = null; renderSchedule(); return; }
+    state.history.push(snapshot);
+    if (state.history.length > 10) state.history.shift();
+    state.changes.push({ swap: true, lines: res.changes });
+    ui.highlight = new Set(res.moved); ui.pick = null; ui.pending = null;
+    save(); renderSchedule();
+    const chk = E.validate(s);
+    toast(chk.problems.length ? "Swapped, but the rules check found a problem. See Organiser check." : "Swapped");
+  }
+  $("listBox").addEventListener("click", e => {
+    const b = e.target.closest(".pick");
+    if (!b || ui.mode !== "edit") return;
+    const n = b.dataset.n;
+    if (!ui.pick) { ui.pick = n; ui.pending = null; renderSchedule(); return; }
+    if (ui.pick === n) { ui.pick = null; renderSchedule(); return; }
+    applySwap(ui.pick, n, {});
+  });
+  function renderEditPrompt() {
+    const box = $("editPrompt"), pd = ui.pending;
+    box.hidden = !pd || ui.mode !== "edit";
+    if (box.hidden) { box.innerHTML = ""; return; }
+    const pairs = pd.pairs.map(pr => `${pr[0]} & ${pr[1]}`).join(" and ");
+    box.innerHTML = `<span>${esc(pairs)} ${pd.pairs.length === 1 ? "is a fixed pair" : "are fixed pairs"}. This swap splits them.</span>
+      <button class="btn danger" type="button" id="epSplit">Split for this game only</button>
+      ${pd.canMove ? `<button class="btn" type="button" id="epMove">Move their partner too</button>` : ""}
+      <button class="btn" type="button" id="epCancel">Cancel</button>`;
+    $("epSplit").onclick = () => applySwap(pd.a, pd.b, { splitPairs: true });
+    if (pd.canMove) $("epMove").onclick = () => applySwap(pd.a, pd.b, { movePartners: true });
+    $("epCancel").onclick = () => { ui.pending = null; renderSchedule(); };
+  }
 
   function renderShuffle() {
     const box = $("shuffleBox");
@@ -1879,6 +2165,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   function changesText() {
     const N = state.schedule.numbers, out = [];
     for (const g of state.changes) {
+      if (g.swap) { out.push("*Change*"); g.lines.forEach(l => out.push(l)); out.push(""); continue; }
       out.push(`*Changes (${g.who} out${g.from ? " from " + g.from : ""})*`);
       if (!g.list.length) out.push("No court changes needed.");
       for (const c of g.list) out.push(c.in ? `${c.time} C${c.court}: ${c.in} (${N[c.in]}) in for ${c.out}` : `${c.time} C${c.court}: a player short (${c.out} out), anyone free please join`);
@@ -1923,6 +2210,13 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const parts = Object.entries(g.partners).map(([k, v]) => `${k}${v > 1 ? " " + v + "x" : ""}`);
       stats.push([g.shared >= 2 ? "good" : "bad", "Friend group", `${g.shared} game${g.shared === 1 ? "" : "s"} together`,
         `${g.members.join(", ")}${parts.length ? ". Partnered: " + parts.join(", ") : ""}`]);
+    }
+    const reqs = E.requestStatus(state.schedule);
+    if (reqs.length) {
+      const met = reqs.filter(r => r.met).length;
+      const word = { partners: "partners", opponents: "opponents", court: "same court" };
+      stats.push([met === reqs.length ? "good" : "bad", "Game requests", `${met} of ${reqs.length} met`,
+        reqs.map(r => `${r.a} & ${r.b} ${word[r.type]}: ${r.met ? `${r.time} C${r.court}` : `not met (${r.why})`}`).join(". ")]);
     }
     if (m.shortGames) stats.push(["bad", "Short games", String(m.shortGames), "Games missing a player after dropouts"]);
     $("summaryBox").innerHTML = stats.map(([cls, k, v, d]) => `<div class="stat ${cls}"><span class="k">${k}</span><span class="v">${esc(v)}</span><span class="d">${esc(d)}</span></div>`).join("");
@@ -2052,7 +2346,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   $("tab-schedule").addEventListener("click", () => { setTab("schedule"); renderSchedule(); });
 
   function renderAll() {
-    renderSettings(); renderNotes(); renderPlayers(); renderCapacity(); renderNewWeek(); renderTabs(); renderSchedule();
+    renderSettings(); renderNotes(); renderPlayers(); renderRequests(); renderCapacity(); renderNewWeek(); renderTabs(); renderSchedule();
   }
   if (state.schedule) ui.tab = "schedule";
   renderAll();
