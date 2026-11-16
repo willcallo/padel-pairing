@@ -1348,7 +1348,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return d[a.length][b.length];
   }
 
-  // "JM3553, HP809" / "HJHF20 and AB4236" / "MT2319 JM3569" / "Maya, Ollie carne" -> pieces
+  // "AB123, CD456" / "EF78 and GH90" / "IJ12 KL34" / "Alex, Sam Lee" -> pieces
   function splitPartners(text) {
     const t = clean(text);
     if (!t || NONE.test(t.toLowerCase().replace(/[.!]/g, ""))) return [];
