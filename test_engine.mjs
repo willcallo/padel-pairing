@@ -469,3 +469,79 @@ test("swapPlayers: plain, sitting out, split pair, move partner, hour guard", ()
   assert.throws(() => E.swapPlayers(tight, tb.time, onc, off), /would only play/);
   assert.throws(() => E.swapPlayers(tight, tb.time, off, tb.sittingOut[1]), /both sitting out/);
 });
+
+const strength = (s, g) => g.teams.flat().reduce((a, x) => a + s.players[x].skill, 0);
+
+test("can't-play times: respected, pairs sit out together, guarantee kept", () => {
+  for (let seed = 0; seed < 5; seed++) {
+    const players = roster(40, 6, seed);            // Player 00 + 01 fixed pair
+    players["Player 00"].unavailable = ["14:00"];   // late start: partner 01 waits too
+    players["Player 30"].unavailable = ["14:00", "14:15", "15:30", "15:45"];   // arrives late AND leaves early
+    players["Player 31"].unavailable = ["14:00", "14:15", "14:30", "14:45", "15:00"];   // only 3 free blocks
+    const s = E.generate(players, { closedCourts: [6, 7], seed });
+    same(E.validate(s).problems, [], `seed ${seed}`);
+    const at = (t, n) => s.blocks.find(b => b.time === t).games.some(g => g.teams.flat().includes(n));
+    for (const n of ["Player 00", "Player 01", "Player 30", "Player 31"]) assert.ok(!at("14:00", n), `${n} not on at 14:00`);
+    assert.ok(s.blocks[0].away.includes("Player 01") && !s.blocks[0].sittingOut.includes("Player 00"), "away, not 'sitting out'");
+    for (const t of ["15:30", "15:45"]) assert.ok(!at(t, "Player 30"));
+    const c = E.gamesPlayed(s);
+    assert.ok(c["Player 00"] >= 4 && c["Player 30"] >= 4, "late starter still gets the hour");
+    assert.equal(c["Player 31"], 3, "only 3 free blocks -> plays all 3");
+    // a person put on court when they can't play is caught
+    const bad = JSON.parse(JSON.stringify(s));
+    const g = bad.blocks[0].games[0]; const swapped = g.teams[0][0]; g.teams[0][0] = "Player 31";
+    bad.blocks[0].away = bad.blocks[0].away.filter(n => n !== "Player 31"); bad.blocks[0].sittingOut.push(swapped);
+    assert.match(E.validate(bad).problems.join(" "), /Player 31 is on Court \d but can't play then/);
+  }
+  const plan = E.planCapacity(Object.assign(roster(40, 0), { }), { start: "14:00", end: "16:00", block: 15, minMinutes: 60, closedCourts: [6, 7] });
+  assert.equal(plan.need, 160); assert.equal(plan.slots, 160);
+});
+
+test("can't-play: thin block uses fewer courts; requests, swaps and capacity respect it", () => {
+  const players = roster(30, 0, 3);
+  Object.keys(players).slice(0, 14).forEach(n => { players[n].unavailable = ["14:00"]; });   // only 16 free at 14:00
+  const s = E.generate(players, { seed: 3 });
+  assert.equal(s.blocks[0].games.length, 4, "4 courts at 14:00");
+  same(E.validate(s).problems, []);
+  assert.throws(() => E.swapPlayers(s, "14:00", "Player 00", s.blocks[0].games[0].teams[0][0]), /can't play at 14:00/);
+  assert.throws(() => E.generate(players, { seed: 3, requests: [{ a: "Player 00", b: "Player 20", type: "court", time: "14:00" }] }), /can't play at 14:00/);
+  const r = E.generate(players, { seed: 3, requests: [{ a: "Player 00", b: "Player 20", type: "partners" }] });
+  assert.notEqual(E.requestStatus(r)[0].time, "14:00");
+  assert.ok(E.requestStatus(r)[0].met);
+  // too few places once times are ticked
+  const tight = roster(40, 0, 1);
+  Object.keys(tight).slice(0, 30).forEach(n => { tight[n].unavailable = ["14:00", "14:15", "14:30", "14:45"]; });
+  assert.throws(() => E.generate(tight, { seed: 1, closedCourts: [6, 7] }), /only \d+ playing places but \d+ are needed/);
+});
+
+test("court order: strongest to weakest in the chosen order, beginner court fixed", () => {
+  for (let seed = 0; seed < 4; seed++) {
+    const s = E.generate(roster(56, 8, seed), { seed, courtOrder: [3, 2, 1, 6, 7, 4, 5] });
+    same(E.validate(s).problems, []);
+    for (const b of s.blocks) {
+      const byC = Object.fromEntries(b.games.map(g => [g.court, strength(s, g)]));
+      const ord = [3, 2, 1, 6, 7, 4, 5].map(c => byC[c]);
+      for (let i = 1; i < ord.length; i++) assert.ok(ord[i - 1] >= ord[i], `order ${b.time}`);
+    }
+  }
+  // closed courts skipped, weakest game still on the last court in the order
+  const s2 = E.generate(roster(40, 4, 2), { seed: 2, closedCourts: [6, 7], courtOrder: [3, 2, 1, 6, 7, 4, 5] });
+  same(s2.settings.courtOrder, [3, 2, 1, 4, 5]);
+  for (const b of s2.blocks) {
+    const weakest = b.games.reduce((m, g) => (strength(s2, g) < strength(s2, m) ? g : m));
+    assert.equal(strength(s2, b.games.find(g => g.court === 5)), strength(s2, weakest));
+  }
+  // fewer games than courts: beginner court still used, spare court comes out of the middle
+  const s3 = E.generate(roster(20, 0, 1), { seed: 1, courtOrder: [3, 2, 1, 6, 7, 4, 5] });
+  for (const b of s3.blocks) same(b.games.map(g => g.court).sort(), [1, 2, 3, 5, 6].sort());
+  // re-ordering an existing schedule only changes court numbers
+  const before = JSON.parse(JSON.stringify(s2));
+  E.reorderCourts(s2, [5, 4, 3, 2, 1]);
+  same(E.validate(s2).problems, []);
+  s2.blocks.forEach((b, i) => {
+    const key = g => g.teams.map(t => t.slice().sort().join("+")).sort().join(" v ");
+    same(b.games.map(key).sort(), before.blocks[i].games.map(key).sort(), "same games");
+    const weakest = b.games.reduce((m, g) => (strength(s2, g) < strength(s2, m) ? g : m));
+    assert.equal(weakest.court, 1, "beginners now on Court 1");
+  });
+});

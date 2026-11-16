@@ -157,6 +157,17 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; 
 .court-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .court-chips button { min-width: 44px; height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--fill-strong); color: var(--faint); font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: line-through; }
 .court-chips button[aria-pressed="true"] { background: var(--court); color: #fff; text-decoration: none; }
+.court-order { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-width: 360px; }
+.court-order li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; padding: 6px 8px 6px 12px; border-radius: 10px; background: var(--surface); color: var(--ink); font-weight: 600; font-size: 14px; }
+.court-order .lvl { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
+.court-order button { width: 32px; height: 28px; border: 0; border-radius: 8px; background: var(--fill-strong); color: var(--ink); cursor: pointer; font-size: 14px; }
+.court-order button:disabled { opacity: .3; cursor: default; }
+.times-tag { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.times-tag .linkish { font-size: 12px; }
+.times-tag.some .linkish { color: var(--warn); }
+.times-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 2px; font-size: 13px; color: var(--muted); }
+.times-row button { min-width: 58px; height: 32px; border: 0; border-radius: 8px; background: var(--fill-strong); color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.times-row button[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); text-decoration: line-through; box-shadow: inset 0 0 0 1.5px var(--warn); }
 label.field input, label.field select { color: var(--ink); font-weight: 400; font-size: 15px; background: var(--surface); }
 
 /* Player list */
@@ -286,6 +297,10 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         <div class="grid">
           <label class="field">Date <input type="date" id="setDate"></label>
           <div class="field courts-field">Courts we have <div class="court-chips" id="setCourts" role="group" aria-label="Open courts"></div></div>
+          <div class="field courts-field">Court order: strongest game first, beginners last
+            <ol class="court-order" id="courtOrder" aria-label="Court order"></ol>
+            <span><button type="button" class="linkish" id="orderReset">Reset to 1 to 7</button></span>
+          </div>
           <label class="field">Start <input type="time" id="setStart" step="300"></label>
           <label class="field">End <input type="time" id="setEnd" step="300"></label>
           <label class="field">Block (min)
@@ -480,11 +495,11 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return d;
   }
 
-  function select(units, hist, slots, blocksLeft, minBlocks, rng, ctx, forced) {
+  function select(units, hist, slots, b, rng, ctx, forced) {
     forced = forced || new Set();
     let maxG = 0;
     for (const n in hist.games) maxG = Math.max(maxG, hist.games[n]);
-    const mustPlay = n => { const need = minBlocks - hist.games[n]; return need > 0 && need >= blocksLeft; };
+    const mustPlay = n => { const need = ctx.target[n] - hist.games[n]; return need > 0 && need >= ctx.freeLeft[n][b]; };
     const must = n => mustPlay(n) || forced.has(n);
     const score = n => (forced.has(n) ? 50000 : 0) + (mustPlay(n) ? 10000 : 0) + (maxG - hist.games[n]) * 100 + (hist.streak[n] >= 2 ? 10 : 0) + rng();
     const pairs = units.filter(u => u.length === 2).map(u => [score(u[0]) + score(u[1]), u]).sort((a, b) => b[0] - a[0]);
@@ -661,10 +676,12 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return { names, skill, gender, single, anySingle, group, anyGroup };
   }
 
-  function generateOnce(players, courtsUsed, times, minBlocks, rng, openCourts, reqs) {
+  function generateOnce(players, plan, times, rng, order, reqs) {
     reqs = reqs || [];
     const pairBreaks = [];
     const ctx = makeCtx(players);
+    ctx.target = plan.target; ctx.freeLeft = plan.freeLeft;
+    const away = plan.away;
     const names = ctx.names;
     const units = [], seen = new Set();
     for (const n of names) {
@@ -681,13 +698,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       // Game requests in this block: force those people on; partner requests become a locked team,
       // and any fixed pair they break is split for this block only (the other half still plays).
       const here = reqs.filter(r => r.block === b);
-      let blockUnits = units;
+      let blockUnits = units.filter(u => u.every(x => !away[x].has(b)));
       const forced = new Set(here.flatMap(r => [r.a, r.b]));
       const partnerReqs = here.filter(r => r.type === "partners");
       if (partnerReqs.length) {
         const touched = new Set(partnerReqs.flatMap(r => [r.a, r.b]));
+        const base = blockUnits;
         blockUnits = [];
-        for (const u of units) {
+        for (const u of base) {
           if (!u.some(x => touched.has(x))) { blockUnits.push(u); continue; }
           if (u.length === 2) {
             pairBreaks.push({ time: t, pair: u.slice() });
@@ -698,15 +716,16 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       }
       let best = null;
       for (let c = 0; c < (here.length ? Math.max(nCand, 6) : nCand); c++) {
-        const [pairs, singles] = select(blockUnits, hist, courtsUsed * 4, times.length - b, minBlocks, rng, ctx, forced);
+        const [pairs, singles] = select(blockUnits, hist, plan.perBlock[b].courts * 4, b, rng, ctx, forced);
         const res = optimise(pairs, singles, ctx, hist, rng, here);
         if (!best || res.cost < best.cost) best = res;
       }
       const sum = gm => gm.ta.concat(gm.tb).reduce((a, x) => a + ctx.skill[x], 0);
       const games = best.games.slice().sort((a, b) => sum(b) - sum(a));
       const playing = new Set(), outGames = [];
+      const courtNums = courtsForGames(games.length, order);
       games.forEach((gm, i) => {
-        outGames.push({ court: openCourts[i], teams: [gm.ta, gm.tb] });
+        outGames.push({ court: courtNums[i], teams: [gm.ta, gm.tb] });
         for (const x of gm.ta) for (const y of gm.tb) hist.opp.set(key(x, y), (hist.opp.get(key(x, y)) || 0) + 1);
         if (!gm.fa) hist.part.set(key(gm.ta[0], gm.ta[1]), (hist.part.get(key(gm.ta[0], gm.ta[1])) || 0) + 1);
         if (!gm.fb) hist.part.set(key(gm.tb[0], gm.tb[1]), (hist.part.get(key(gm.tb[0], gm.tb[1])) || 0) + 1);
@@ -722,9 +741,12 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         }
       });
       for (const n of names) {
-        if (playing.has(n)) { hist.games[n]++; hist.streak[n] = 0; } else hist.streak[n]++;
+        if (playing.has(n)) { hist.games[n]++; hist.streak[n] = 0; } else if (!away[n].has(b)) hist.streak[n]++;
       }
-      blocks.push({ time: t, games: outGames, sittingOut: names.filter(n => !playing.has(n)).sort(byName) });
+      outGames.sort((x, y) => x.court - y.court);
+      blocks.push({ time: t, used: plan.perBlock[b].courts, games: outGames,
+        sittingOut: names.filter(n => !playing.has(n) && !away[n].has(b)).sort(byName),
+        away: names.filter(n => !playing.has(n) && away[n].has(b)).sort(byName) });
     });
     return { blocks, hist, pairBreaks };
   }
@@ -747,8 +769,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   const REQ_WORD = { partners: "partners", opponents: "opponents", court: "on the same court" };
   // Check requests up front and give "any time" ones a block. Throws PadelError with a plain reason.
-  function placeRequests(requests, players, times, slots, rng) {
-    const out = [], busy = {};
+  function placeRequests(requests, players, times, plan, rng) {
+    const out = [], busy = {}, away = plan.away;
     const mark = (n, b) => { (busy[n] = busy[n] || new Set()).add(b); };
     for (const r of requests) {
       if (!players[r.a] || !players[r.b]) throw new PadelError(`A game request names someone who isn't playing this week (${!players[r.a] ? r.a : r.b}).`);
@@ -759,13 +781,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     }
     for (const r of requests.filter(r => r.time)) {
       const b = times.indexOf(r.time);
+      for (const n of [r.a, r.b]) if (away[n].has(b)) throw new PadelError(`${n} can't play at ${r.time}${players[n].partner && !(players[n].unavailable || []).includes(r.time) ? ` (their partner ${players[n].partner} can't)` : ""}, so the request with ${n === r.a ? r.b : r.a} can't go there.`);
       for (const n of [r.a, r.b]) if (busy[n] && busy[n].has(b)) throw new PadelError(`${n} is in two game requests at ${r.time}. Move one of them to another time.`);
       mark(r.a, b); mark(r.b, b);
       out.push(Object.assign({}, r, { block: b }));
     }
     for (const r of requests.filter(r => !r.time)) {
-      const options = times.map((_, i) => i).filter(i => !(busy[r.a] && busy[r.a].has(i)) && !(busy[r.b] && busy[r.b].has(i)));
-      if (!options.length) throw new PadelError(`No time left for the request with ${r.a} and ${r.b}: they're already in requests in every block.`);
+      const options = times.map((_, i) => i).filter(i => !away[r.a].has(i) && !away[r.b].has(i) && !(busy[r.a] && busy[r.a].has(i)) && !(busy[r.b] && busy[r.b].has(i)));
+      if (!options.length) throw new PadelError(`No time works for the request with ${r.a} and ${r.b}: there's no block they can both play that isn't already used by another of their requests.`);
       const b = options[Math.floor(rng() * options.length)];
       mark(r.a, b); mark(r.b, b);
       out.push(Object.assign({}, r, { block: b, time: times[b] }));
@@ -773,7 +796,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     times.forEach((t, b) => {
       const ppl = new Set();
       out.filter(r => r.block === b).forEach(r => [r.a, r.b].forEach(n => { ppl.add(n); if (players[n].partner) ppl.add(players[n].partner); }));
-      if (ppl.size > slots) throw new PadelError(`Too many game requests at ${t} to fit on the open courts.`);
+      if (ppl.size > plan.perBlock[b].courts * 4) throw new PadelError(`Too many game requests at ${t} to fit on the courts in use then.`);
     });
     return out;
   }
@@ -794,7 +817,46 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return ALL_COURTS.filter(c => c <= (+o.courts || 7) && !closed.includes(c));
   }
 
-  // players: {name: {skill 1-5, partner name|null, gender "M"|"F"|"X", pref "single"|"any", group id|null}}
+  // Open courts in the order Will wants them filled, strongest game first. Unlisted open courts go at the end.
+  function courtOrderList(courtOrder, open) {
+    const ord = (Array.isArray(courtOrder) ? courtOrder : ALL_COURTS).filter((c, i, a) => open.includes(c) && a.indexOf(c) === i);
+    return ord.concat(open.filter(c => !ord.includes(c)));
+  }
+  // n games sorted strongest first -> court numbers. The weakest game always takes the last court in the
+  // order (the beginner court), even when fewer courts are needed; spare courts come out of the middle.
+  function courtsForGames(n, order) {
+    if (n <= 0) return [];
+    if (n >= order.length) return order.slice(0, n);
+    return order.slice(0, n - 1).concat([order[order.length - 1]]);
+  }
+
+  // Who can play when, how many courts each block can fill, and each person's own guarantee.
+  function planCapacity(players, opts) {
+    const times = blockTimes(opts.start, opts.end, +opts.block);
+    const minBlocks = Math.ceil(+opts.minMinutes / +opts.block);
+    const names = Object.keys(players), open = openCourtList(opts);
+    const away = {};
+    for (const n of names) away[n] = new Set((players[n].unavailable || []).map(t => times.indexOf(t)).filter(i => i >= 0));
+    for (const n of names) { const q = players[n].partner; if (q && players[q]) for (const i of [...away[q]]) away[n].add(i); }   // a pair sits out together
+    const used = Math.min(open.length, Math.floor(names.length / 4));
+    const perBlock = times.map((t, b) => {
+      const free = names.filter(n => !away[n].has(b)).length;
+      return { time: t, free, courts: Math.min(used, Math.floor(free / 4)) };
+    });
+    const target = {}, freeLeft = {}, short = [];
+    for (const n of names) {
+      const freeCount = times.length - away[n].size;
+      target[n] = Math.min(minBlocks, freeCount);
+      if (freeCount < minBlocks) short.push({ name: n, blocks: freeCount });
+      freeLeft[n] = times.map((_, b) => times.slice(b).filter((__, j) => !away[n].has(b + j)).length);
+    }
+    const need = names.reduce((a, n) => a + target[n], 0);
+    const slots = perBlock.reduce((a, x) => a + x.courts * 4, 0);
+    const anyAway = names.some(n => away[n].size);
+    return { times, minBlocks, open, used, away, perBlock, target, freeLeft, short, need, slots, anyAway };
+  }
+
+  // players: {name: {skill 1-5, partner name|null, gender "M"|"F"|"X", pref "single"|"any", group id|null, unavailable: [times]}}
   function generate(players, opts) {
     opts = Object.assign({ courts: 7, start: "14:00", end: "16:00", block: 15, minMinutes: 60, seed: null, date: "" }, opts || {});
     const times = blockTimes(opts.start, opts.end, +opts.block);
@@ -807,15 +869,19 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     }
     const open = openCourtList(opts);
     if (!open.length) throw new PadelError("All the courts are closed. Open at least one in Session settings.");
-    const used = capacityCheck(Object.keys(players).length, open.length, times.length, minBlocks, opts.minMinutes);
+    const plan = planCapacity(players, opts);
+    if (!plan.anyAway) capacityCheck(Object.keys(players).length, open.length, times.length, minBlocks, opts.minMinutes);
+    else if (Object.keys(players).length < 4) throw new PadelError(`Need at least 4 players, got ${Object.keys(players).length}`);
+    else if (plan.need > plan.slots) throw new PadelError(`With the times people can't play, there are only ${plan.slots} playing places but ${plan.need} are needed for everyone's ${opts.minMinutes} minutes. Open another court, untick some times, or remove someone.`);
+    const used = plan.used, order = courtOrderList(opts.courtOrder, open);
     let seed = opts.seed == null ? Math.floor(Math.random() * 1e6) + 1 : +opts.seed;
     const requests = (opts.requests || []).map(r => ({ a: r.a, b: r.b, type: r.type, time: r.time || null }));
-    placeRequests(requests, players, times, used * 4, makeRng(seed));   // throws early on impossible requests
+    placeRequests(requests, players, times, plan, makeRng(seed));   // throws early on impossible requests
     let res = null, attempt = 0, placed = [], hourOk = false;
     for (; attempt < MAX_ATTEMPTS; attempt++) {
-      placed = placeRequests(requests, players, times, used * 4, makeRng(seed + attempt + 7919));
-      res = generateOnce(players, used, times, minBlocks, makeRng(seed + attempt), open, placed);
-      hourOk = Math.min(...Object.values(res.hist.games)) >= minBlocks;
+      placed = placeRequests(requests, players, times, plan, makeRng(seed + attempt + 7919));
+      res = generateOnce(players, plan, times, makeRng(seed + attempt), order, placed);
+      hourOk = Object.keys(players).every(n => res.hist.games[n] >= plan.target[n]);
       if (hourOk && placed.every(r => requestMet(res.blocks, r))) break;
     }
     if (attempt === MAX_ATTEMPTS) {
@@ -824,9 +890,10 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       throw new PadelError(`Couldn't fit the request for ${bad.a} and ${bad.b} (${REQ_WORD[bad.type]}${bad.time ? " at " + bad.time : ""}). Try a different time, or remove it.`);
     }
     const pl = {};
-    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any", group: players[n].group || null };
+    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any", group: players[n].group || null,
+      unavailable: times.filter((t, b) => plan.away[n].has(b)) };
     return {
-      settings: { courts: open.length, openCourts: open, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
+      settings: { courts: open.length, openCourts: open, courtOrder: order, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
       players: pl,
       numbers: assignNumbers(Object.keys(players)),
       blocks: res.blocks,
@@ -1005,7 +1072,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     a = resolveName(s, a); b = resolveName(s, b);
     if (a === b) throw new PadelError("Pick two different people");
     for (const n of [a, b]) if (droppedBy(s, n, bi)) throw new PadelError(`${n} has dropped out by ${time}`);
-    const blk = s.blocks[bi], pa = locate(blk, a), pb = locate(blk, b);
+    const blk = s.blocks[bi];
+    for (const n of [a, b]) if ((blk.away || []).includes(n)) throw new PadelError(`${n} can't play at ${time}${s.players[n].partner ? " (they and " + s.players[n].partner + " sit out together)" : ""}`);
+    const pa = locate(blk, a), pb = locate(blk, b);
     if (!pa || !pb) throw new PadelError("Couldn't find one of them at that time");
     if (pa.sit && pb.sit) throw new PadelError(`${a} and ${b} are both sitting out at ${time}, so there's nothing to swap`);
     if (!pa.sit && !pb.sit && pa.g === pb.g && pa.ti === pb.ti) throw new PadelError(`${a} and ${b} are already partners at ${time}`);
@@ -1018,6 +1087,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const canMove = !pa.sit && !pb.sit && pa.g !== pb.g;
     if (pairs.length && !opts.splitPairs && !opts.movePartners) return { needs: "pair", pairs, canMove };
     const counts = gamesPlayed(s), min = s.settings.minBlocks;
+    const targetOf = n => Math.min(min, s.blocks.filter(x => !(s.players[n].unavailable || []).includes(x.time)).length);
     const lines = [];
     if (opts.movePartners) {
       if (!canMove) throw new PadelError("Moving partners too only works when both people are on court in different games");
@@ -1028,7 +1098,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     }
     if (pa.sit || pb.sit) {
       const off = pa.sit ? b : a, on = pa.sit ? a : b, spot = pa.sit ? pb : pa;
-      if (counts[off] - 1 < min) throw new PadelError(`${off} would only play ${(counts[off] - 1) * s.settings.block} min if they sat out at ${time} (needs ${s.settings.minMinutes}). Swap them with someone on court instead.`);
+      if (counts[off] - 1 < targetOf(off)) throw new PadelError(`${off} would only play ${(counts[off] - 1) * s.settings.block} min if they sat out at ${time} (needs ${s.settings.minMinutes}). Swap them with someone on court instead.`);
       spot.g.teams[spot.ti][spot.k] = on;
       blk.sittingOut = blk.sittingOut.filter(x => x !== on).concat([off]).sort(byName);
       lines.push(`${time} C${spot.g.court}: ${on} in for ${off} (${off} sits out)`);
@@ -1069,11 +1139,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
           if (q && P[q] && active(q, b) && !t.includes(q) && !splitOk(blk.time, x, q)) problems.push(`${blk.time}: ${x} isn't on the same team as their partner ${q}`);
         }
       }
-      if (places !== set.courtsUsed * 4) problems.push(`${blk.time}: ${places} places on court, expected ${set.courtsUsed * 4}`);
+      const usedHere = blk.used != null ? blk.used : set.courtsUsed;
+      if (places !== usedHere * 4) problems.push(`${blk.time}: ${places} places on court, expected ${usedHere * 4}`);
       for (const n in P) {
         if (!active(n, b)) continue;
-        const on = where[n] != null, sit = blk.sittingOut.includes(n);
-        if (!on && !sit) problems.push(`${blk.time}: ${n} is missing (not on court or sitting out)`);
+        const on = where[n] != null, sit = blk.sittingOut.includes(n), off = (blk.away || []).includes(n);
+        const cant = (P[n].unavailable || []).includes(blk.time);
+        if (on && cant) problems.push(`${blk.time}: ${n} is on Court ${where[n]} but can't play then`);
+        if (!on && !sit && !off) problems.push(`${blk.time}: ${n} is missing (not on court or sitting out)`);
         if (on && sit) problems.push(`${blk.time}: ${n} is on court and sitting out`);
         const q = P[n].partner;
         if (q && P[q] && active(q, b) && n < q && on !== (where[q] != null) && !splitOk(blk.time, n, q)) problems.push(`${blk.time}: ${n} and ${q} are a pair but only one of them is on court`);
@@ -1081,9 +1154,25 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     });
     const counts = gamesPlayed(s);
     for (const n in P) {
-      if (P[n].droppedFrom == null && counts[n] < set.minBlocks) problems.push(`${n} only plays ${counts[n] * set.block} min (should be ${set.minMinutes}+)`);
+      const target = Math.min(set.minBlocks, s.blocks.filter(x => !(P[n].unavailable || []).includes(x.time)).length);
+      if (P[n].droppedFrom == null && counts[n] < target) problems.push(`${n} only plays ${counts[n] * set.block} min (should be ${target * set.block}+)`);
     }
-    return { rules: 6, problems };
+    return { rules: 7, problems };
+  }
+
+  // Re-assign court numbers in an existing schedule to a new order. Who plays whom doesn't change.
+  function reorderCourts(s, courtOrder) {
+    const open = s.settings.openCourts || openCourtList({ courts: s.settings.courts });
+    const order = courtOrderList(courtOrder, open);
+    const str = g => { const ps = g.teams.flat().filter(Boolean); return ps.reduce((a, x) => a + s.players[x].skill, 0) / Math.max(1, ps.length); };
+    for (const blk of s.blocks) {
+      const games = blk.games.slice().sort((x, y) => str(y) - str(x));
+      const nums = courtsForGames(games.length, order);
+      games.forEach((g, i) => { g.court = nums[i]; });
+      blk.games.sort((x, y) => x.court - y.court);
+    }
+    s.settings.courtOrder = order;
+    return order;
   }
 
   function playerSlots(s) {
@@ -1114,7 +1203,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return lines.join("\n") + "\n";
   }
 
-  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, validate, openCourtList, swapPlayers, requestStatus, gamesPlayed, playerSlots,
+  root.PadelEngine = { PadelError, makeRng, parseTime, fmtTime, blockTimes, generate, dropPlayers, summary, validate, openCourtList, courtOrderList, planCapacity, reorderCourts, swapPlayers, requestStatus, gamesPlayed, playerSlots,
     renderText, maxPlayers, wantsSingle, byName, gamePlayers, consts: { W_TEAM, W_SPREAD, W_OPP, W_PART, W_GENDER, DROP_EXTRA_GAME } };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
@@ -1676,11 +1765,11 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return d.toISOString().slice(0, 10);
   }
   function freshState() {
-    return { v: 1, settings: { date: nextWednesday(), courts: 7, closedCourts: [], start: "14:00", end: "16:00", block: 15, minMinutes: 60 },
+    return { v: 1, settings: { date: nextWednesday(), courts: 7, closedCourts: [], courtOrder: [1, 2, 3, 4, 5, 6, 7], start: "14:00", end: "16:00", block: 15, minMinutes: 60 },
       players: [], notes: [], example: false, requests: [], schedule: null, stale: false, changes: [], history: [] };
   }
   let state = freshState();
-  let ui = { tab: "signups", block: 0, mode: "map", highlight: new Set(), confirm: null, search: "", pick: null, pending: null };
+  let ui = { tab: "signups", block: 0, mode: "map", highlight: new Set(), confirm: null, search: "", pick: null, pending: null, timesOpen: null };
   let nextId = 1;
   const pid = () => "p" + (nextId++) + Math.random().toString(36).slice(2, 6);
 
@@ -1756,6 +1845,35 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return !iso || isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   }
   function openCourts() { return E.openCourtList(state.settings); }
+  function courtOrder() { return E.courtOrderList(state.settings.courtOrder, openCourts()); }
+  function renderCourtOrder() {
+    const ord = courtOrder();
+    $("courtOrder").innerHTML = ord.map((c, i) => `<li><span>Court ${c}<span class="lvl">${i === 0 ? "strongest" : i === ord.length - 1 ? "beginners" : ""}</span></span>
+      <button type="button" id="up-${c}" data-mv="${c}" data-d="-1" aria-label="Move Court ${c} up"${i === 0 ? " disabled" : ""}>&uarr;</button>
+      <button type="button" id="dn-${c}" data-mv="${c}" data-d="1" aria-label="Move Court ${c} down"${i === ord.length - 1 ? " disabled" : ""}>&darr;</button></li>`).join("");
+  }
+  function setCourtOrder(full) {
+    state.settings.courtOrder = full;
+    if (state.schedule) {
+      state.history.push(JSON.stringify({ schedule: state.schedule, changes: state.changes }));
+      const ord = E.reorderCourts(state.schedule, full);
+      state.changes.push({ swap: true, lines: [`Court numbers changed: strongest on Court ${ord[0]}, beginners on Court ${ord[ord.length - 1]}`] });
+      toast("Courts re-ordered in the schedule. Save the PDF again.");
+    }
+    save(); withFocus(() => { renderSettings(); renderSchedule(); });
+  }
+  $("courtOrder").addEventListener("click", e => {
+    const b = e.target.closest("[data-mv]");
+    if (!b || b.disabled) return;
+    const c = +b.dataset.mv, d = +b.dataset.d;
+    const ord = courtOrder(), i = ord.indexOf(c), j = i + d;
+    if (j < 0 || j >= ord.length) return;
+    [ord[i], ord[j]] = [ord[j], ord[i]];
+    const closed = [1, 2, 3, 4, 5, 6, 7].filter(x => !ord.includes(x));
+    const prev = (state.settings.courtOrder || []).filter(x => closed.includes(x));   // keep closed courts' places for later
+    setCourtOrder(ord.concat(prev.length ? prev : closed));
+  });
+  $("orderReset").addEventListener("click", () => setCourtOrder([1, 2, 3, 4, 5, 6, 7]));
   function courtsLabel() {
     const open = openCourts(), closed = [1, 2, 3, 4, 5, 6, 7].filter(c => !open.includes(c));
     const list = a => (a.length > 2 && a[a.length - 1] - a[0] === a.length - 1 ? `${a[0]}-${a[a.length - 1]}` : a.join(", "));
@@ -1771,7 +1889,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const out = {};
     for (const p of state.players) {
       const q = p.partner && byId(p.partner);
-      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref, group: p.group || null };
+      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref, group: p.group || null, unavailable: (p.unavailable || []).slice() };
     }
     return out;
   }
@@ -1883,8 +2001,10 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const open = openCourts();
     $("setCourts").innerHTML = [1, 2, 3, 4, 5, 6, 7].map(c => `<button type="button" id="crt-${c}" data-c="${c}" aria-pressed="${open.includes(c)}" aria-label="Court ${c} ${open.includes(c) ? "open" : "closed"}">${c}</button>`).join("");
     $("setBlock").value = String(s.block); $("setMin").value = s.minMinutes;
-    const line = `${s.start} to ${s.end} · ${courtsLabel()} · ${s.block}-min blocks · everyone plays ${s.minMinutes}+ min`;
+    const ord = E.courtOrderList(s.courtOrder, openCourts());
+    const line = `${s.start} to ${s.end} · ${courtsLabel()} · beginners on Court ${ord[ord.length - 1]} · ${s.block}-min blocks · everyone plays ${s.minMinutes}+ min`;
     $("settingsSummary").textContent = "Session settings: " + line;
+    renderCourtOrder();
     if (typeof renderRequests === "function" && $("reqTime")) renderRequests();
     $("sessionLine").textContent = `${dateLabel(s.date) || "Date not set"} · ${s.start} to ${s.end}`;
   }
@@ -1924,18 +2044,32 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const gender = `<select id="g-${p.id}" data-act="gender" data-id="${p.id}" aria-label="Gender for ${esc(p.name)}">${[["M", "Man"], ["F", "Woman"], ["X", "Other"]].map(([v, l]) => `<option value="${v}"${p.gender === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
       const pref = `<select id="pf-${p.id}" data-act="pref" data-id="${p.id}" aria-label="Court preference for ${esc(p.name)}"><option value="any"${p.pref !== "single" ? " selected" : ""}>Any court</option><option value="single"${p.pref === "single" ? " selected" : ""}>Single-gender</option></select>`;
       return `<div class="prow${p.skillFlag ? " flag" : ""}">
-        <div class="c-name"><input type="text" id="nm-${p.id}" data-act="name" data-id="${p.id}" value="${esc(p.name)}" aria-label="Name">${p.skillFlag ? '<span class="pair-tag" style="color:var(--warn)">Check skill</span>' : ""}${groupTag(p)}</div>
+        <div class="c-name"><input type="text" id="nm-${p.id}" data-act="name" data-id="${p.id}" value="${esc(p.name)}" aria-label="Name">${p.skillFlag ? '<span class="pair-tag" style="color:var(--warn)">Check skill</span>' : ""}${groupTag(p)}${timesTag(p)}</div>
         <div class="c-skill"><div class="skills" role="group" aria-label="Skill for ${esc(p.name)}">${sk}</div></div>
         <div class="c-partner">${partner}</div>
         <div class="c-gender">${gender}</div>
         <div class="c-pref">${pref}</div>
         <div class="c-del"><button type="button" class="icon-btn" id="del-${p.id}" data-act="del" data-id="${p.id}" aria-label="Remove ${esc(p.name)}">&times;</button></div>
+        ${timesRow(p)}
       </div>`;
     }).join("");
     box.innerHTML = `<div class="players"><div class="prow head"><span>Name</span><span>Skill</span><span>Partner</span><span>Gender</span><span>Courts</span><span></span></div>${rows}</div>`;
   }
 
   function groupMates(p) { return p.group ? state.players.filter(q => q.group === p.group && q.id !== p.id) : []; }
+  function sessionTimes() { try { return E.blockTimes(state.settings.start, state.settings.end, +state.settings.block); } catch (e) { return []; } }
+  function timesTag(p) {
+    const ts = sessionTimes(), own = (p.unavailable || []).filter(t => ts.includes(t));
+    const q = p.partner && byId(p.partner), theirs = q ? (q.unavailable || []).filter(t => ts.includes(t) && !own.includes(t)) : [];
+    const label = own.length ? `Can't play ${own.join(", ")}` : "Plays all session";
+    const extra = theirs.length ? ` · off with ${esc(q.name)} at ${theirs.join(", ")}` : "";
+    return `<span class="times-tag${own.length || theirs.length ? " some" : ""}"><button type="button" class="linkish" id="tm-${p.id}" data-act="times" data-id="${p.id}" aria-expanded="${ui.timesOpen === p.id}">${label}</button>${extra}</span>`;
+  }
+  function timesRow(p) {
+    if (ui.timesOpen !== p.id) return "";
+    const own = p.unavailable || [];
+    return `<div class="times-row"><span>Tap the times ${esc(p.name)} <b>can't</b> play:</span>${sessionTimes().map(t => `<button type="button" id="tt-${p.id}-${t.replace(":", "")}" data-act="away" data-id="${p.id}" data-t="${t}" aria-pressed="${own.includes(t)}">${t}</button>`).join("")}<button type="button" class="linkish" data-act="times" data-id="${p.id}">Done</button></div>`;
+  }
   function groupTag(p) {
     const mates = groupMates(p);
     if (!mates.length) return "";
@@ -1952,6 +2086,13 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const p = byId(b.dataset.id);
     if (!p) return;
     if (b.dataset.act === "skill") { p.skill = +b.dataset.v; p.skillFlag = false; withFocus(playersChanged); }
+    if (b.dataset.act === "times") { ui.timesOpen = ui.timesOpen === p.id ? null : p.id; withFocus(renderPlayers); return; }
+    if (b.dataset.act === "away") {
+      const t = b.dataset.t, set = new Set(p.unavailable || []);
+      if (set.has(t)) set.delete(t); else set.add(t);
+      p.unavailable = sessionTimes().filter(x => set.has(x));
+      withFocus(playersChanged); return;
+    }
     if (b.dataset.act === "ungroup") { leaveGroup(p); playersChanged(); toast(`${p.name} taken out of the group`); }
     if (b.dataset.act === "del") {
       leaveGroup(p);
@@ -1999,7 +2140,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const max = E.maxPlayers(openCourts().length, nb, mb);
     const pairs = state.players.filter(p => p.partner).length / 2;
     const flags = state.players.filter(p => p.skillFlag).length;
-    return { n, max, pairs, singles: n - 2 * pairs, flags, nb };
+    let plan = null;
+    try { if (n >= 4 && nb) plan = E.planCapacity(enginePlayers(), Object.assign({}, state.settings, { openCourts: openCourts() })); } catch (e) { plan = null; }
+    return { n, max, pairs, singles: n - 2 * pairs, flags, nb, plan };
   }
   function renderCapacity() {
     const c = capacityInfo(), cap = $("capacity");
@@ -2009,11 +2152,18 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     else if (c.nb === 0) { sub = "Check the session times: no blocks fit."; ok = false; }
     else if (c.n < 4) { sub = "Need at least 4 players."; }
     else if (c.n > c.max) { over = true; ok = false; sub = `Max ${c.max} for everyone to get ${state.settings.minMinutes} min on ${openCourts().length} courts. Remove ${c.n - c.max} or open another court.`; }
+    else if (c.plan && c.plan.anyAway && c.plan.need > c.plan.slots) { over = true; ok = false; sub = `With the times people can't play there are only ${c.plan.slots} places for ${c.plan.need} needed. Open a court, untick some times or remove someone.`; }
     else {
       sub = `${c.pairs} pair${c.pairs === 1 ? "" : "s"}, ${c.singles} single${c.singles === 1 ? "" : "s"} · max ${c.max} on ${openCourts().length} court${openCourts().length === 1 ? "" : "s"}${c.n === c.max ? " (full: everyone gets exactly " + state.settings.minMinutes + " min)" : ""}`;
       if (c.flags) sub += ` · ${c.flags} skill${c.flags === 1 ? "" : "s"} to check`;
       const nr = (state.requests || []).length;
       if (nr) sub += ` · ${nr} game request${nr === 1 ? "" : "s"}`;
+      if (c.plan) {
+        const late = state.players.filter(p => (p.unavailable || []).length).length;
+        if (late) sub += ` · ${late} with times they can't play`;
+        c.plan.short.forEach(x => { sub += ` · ${x.name} can only play ${x.blocks * state.settings.block} min`; });
+        c.plan.perBlock.filter(x => x.courts < c.plan.used).forEach(x => { sub += ` · only ${x.free} free at ${x.time}, so ${x.courts} court${x.courts === 1 ? "" : "s"} then`; });
+      }
     }
     $("capMain").textContent = main; $("capSub").textContent = sub;
     cap.classList.toggle("over", over);
@@ -2025,7 +2175,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const box = $("newWeekBox");
     if (ui.confirm === "newweek") {
       box.innerHTML = `<div class="confirm"><span>Clear this week's players and schedule?</span><button class="btn danger" id="newWeekYes">Clear everything</button><button class="btn" id="newWeekNo">Cancel</button></div>`;
-      $("newWeekYes").onclick = () => { const s = state.settings; state = freshState(); state.settings.start = s.start; state.settings.end = s.end; state.settings.block = s.block; state.settings.minMinutes = s.minMinutes; ui.confirm = null; save(); renderAll(); toast("Cleared. Import next week's sign-ups."); };
+      $("newWeekYes").onclick = () => { const s = state.settings; state = freshState(); state.settings.courtOrder = s.courtOrder || state.settings.courtOrder; state.settings.start = s.start; state.settings.end = s.end; state.settings.block = s.block; state.settings.minMinutes = s.minMinutes; ui.confirm = null; save(); renderAll(); toast("Cleared. Import next week's sign-ups."); };
       $("newWeekNo").onclick = () => { ui.confirm = null; renderNewWeek(); };
     } else {
       box.innerHTML = `<button class="btn danger" id="newWeek">Start a new week</button>`;
@@ -2080,7 +2230,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const sitName = x => (edit ? `<button type="button" class="pick" data-n="${esc(x)}" aria-pressed="${ui.pick === x}">${N[x]} ${esc(x)}</button>` : `${N[x]} ${esc(x)}`);
       const hint = edit ? `<div class="edit-hint">${ui.pick ? `Now tap who ${esc(ui.pick)} should swap with at ${blk.time}.` : `Tap two people to swap their places at ${blk.time}. Nothing else moves.`}</div>` : "";
       $("listBox").innerHTML = hint + blk.games.map(g => `<div class="g"><span class="c">C${g.court}</span><span>${g.teams[0].map(x => nm(x, "y")).join(" & ")}<span class="vs">vs</span>${g.teams[1].map(x => nm(x, "w")).join(" & ")}</span></div>`).join("")
-        + (blk.sittingOut.length ? `<div class="sit"><b>Sitting out:</b> ${blk.sittingOut.map(sitName).join(edit ? " " : ", ")}</div>` : "");
+        + (blk.sittingOut.length ? `<div class="sit"><b>Sitting out:</b> ${blk.sittingOut.map(sitName).join(edit ? " " : ", ")}</div>` : "")
+        + ((blk.away || []).length ? `<div class="sit"><b>Not playing at this time:</b> ${blk.away.map(x => `${N[x]} ${esc(x)}`).join(", ")}</div>` : "");
     }
     renderShuffle(); renderDrop(); renderChanges(); renderSummary(); renderIndex();
   }
@@ -2195,7 +2346,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const stats = [
       chk.problems.length
         ? ["bad", "Rules check", `${chk.problems.length} problem${chk.problems.length === 1 ? "" : "s"}`, chk.problems.slice(0, 4).join(". ") + (chk.problems.length > 4 ? "..." : "")]
-        : ["good", "Rules check", "All passed", `Checked every block: nobody double-booked, pairs together, open courts full, no closed courts used, nobody missing, everyone ${set.minMinutes}+ min`],
+        : ["good", "Rules check", "All passed", `Checked every block: nobody double-booked, pairs together, open courts full, no closed courts used, nobody on at a time they can't play, nobody missing, everyone gets their ${set.minMinutes} min (or all their free time)`],
       [m.ok ? "good" : "bad", "Play time", `${m.minMinutes}+ min each`, m.ok ? (m.minBlocks === m.maxBlocks ? `Everyone gets exactly ${m.minMinutes} min (${m.minBlocks} blocks)` : `Everyone gets ${set.minMinutes} min or more (${m.minBlocks} to ${m.maxBlocks} blocks)`) : `Someone is under ${set.minMinutes} min`],
       ["", "Skill match", `±${m.avgGap.toFixed(2)}`, `Average gap between teams, biggest ${m.maxGap.toFixed(1)}. Widest game spread ${m.maxSpread}.`],
       ["", "Repeat opponents", String(m.repeatOpponents), "Pairs of players who meet more than once as opponents"],
