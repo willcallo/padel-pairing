@@ -424,9 +424,6 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   const W_OPP = 1.5;      // per previous meeting as opponents today
   const W_PART = 6.0;     // per previous time two singles partnered today
   const W_GENDER = 10.0;  // per other-gender player in a game, for each single-gender player in it
-  const W_FRIEND = 6.0;   // bonus per pair of friend-group members on the same court (until they've shared 2 games)
-  const W_FRIEND_PART = 8.0; // bonus when two friend-group singles partner up (repeat-partner cost still applies)
-  const FRIEND_TARGET = 2;
   const W_REQ = 500.0;    // game requests (opponents / same court): far above every other cost
   const DROP_EXTRA_GAME = 0.6;
   const RESTARTS = 2, MAX_ATTEMPTS = 20;
@@ -543,31 +540,12 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         d = best.nd;
       }
     }
-    // Bring group-mates on in the same block while their group still wants court time together
-    // (again only swapping people with equal games).
-    if (ctx.anyGroup) {
-      const grp = ctx.group;
-      const selNames = () => selPairs.flat().concat(selSingles);
-      const needy = new Set(selNames().map(n => grp[n]).filter(gid => gid && (hist.groupShared.get(gid) || 0) < FRIEND_TARGET));
-      for (const gid of needy) {
-        for (const u of pairsRest.filter(u => grp[u[0]] === gid)) {
-          const i = selPairs.findIndex(v => !grp[v[0]] && !must(v[0]) && hist.games[v[0]] === hist.games[u[0]]);
-          if (i >= 0) { const v = selPairs[i]; selPairs[i] = u; pairsRest[pairsRest.indexOf(u)] = v; }
-        }
-        for (const n of rest.filter(x => grp[x] === gid)) {
-          const before = ctx.anySingle ? genderDeficit(selNames(), ctx) : 0;
-          const i = selSingles.findIndex(v => !grp[v] && !must(v) && hist.games[v] === hist.games[n] &&
-            (!ctx.anySingle || genderDeficit(selNames().map(x => (x === v ? n : x)), ctx) <= before));
-          if (i >= 0) { const v = selSingles[i]; selSingles[i] = n; rest[rest.indexOf(n)] = v; }
-        }
-      }
-    }
     return [selPairs, selSingles];
   }
 
   function optimise(fixedPairs, singles, ctx, hist, rng, reqHere) {
     const reqs = (reqHere || []).filter(r => r.type !== "partners");
-    const { skill, gender, single, anySingle, group, anyGroup } = ctx;
+    const { skill, gender, single, anySingle } = ctx;
     const opp = hist.opp, part = hist.part, together = hist.together;
     const g = (m, k) => m.get(k) || 0;
     let best = null;
@@ -595,23 +573,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
           const ps = [a0, a1, b0, b1];
           for (const x of ps) if (single[x]) for (const y of ps) if (gender[y] !== gender[x]) c += W_GENDER;
         }
-        if (anyGroup) {
-          const ps = [a0, a1, b0, b1];
-          for (let i = 0; i < 4; i++) {
-            const gx = group[ps[i]];
-            if (!gx) continue;
-            for (let j = i + 1; j < 4; j++) {
-              if (group[ps[j]] !== gx) continue;
-              const fixedMates = (i === 0 && j === 1 && fixed[games[gi][0]]) || (i === 2 && j === 3 && fixed[games[gi][1]]);
-              if (!fixedMates && g(together, key(ps[i], ps[j])) < FRIEND_TARGET) c -= W_FRIEND;
-            }
-          }
-          if (!fixed[games[gi][0]] && group[a0] && group[a0] === group[a1]) c -= W_FRIEND_PART;
-          if (!fixed[games[gi][1]] && group[b0] && group[b0] === group[b1]) c -= W_FRIEND_PART;
-        }
         if (reqs.length) {
           const ps = [a0, a1, b0, b1];
           for (const r of reqs) {
+            if (r.type === "group") {
+              const inGame = r.people.filter(x => ps.includes(x)).length;
+              c -= W_REQ * inGame * (inGame - 1) / 2;
+              continue;
+            }
             const ia = ps.indexOf(r.a), ib = ps.indexOf(r.b);
             if (ia < 0 || ib < 0) continue;
             if (r.type === "opponents" && (ia < 2) === (ib < 2)) continue;
@@ -663,17 +632,15 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
   function makeCtx(players) {
     const names = Object.keys(players);
-    const skill = {}, gender = {}, single = {}, group = {};
-    let anySingle = false, anyGroup = false;
+    const skill = {}, gender = {}, single = {};
+    let anySingle = false;
     for (const n of names) {
       skill[n] = players[n].skill;
       gender[n] = players[n].gender || "X";
       single[n] = wantsSingle(players, n);
       if (single[n]) anySingle = true;
-      group[n] = players[n].group || null;
-      if (group[n]) anyGroup = true;
     }
-    return { names, skill, gender, single, anySingle, group, anyGroup };
+    return { names, skill, gender, single, anySingle };
   }
 
   function generateOnce(players, plan, times, rng, order, reqs) {
@@ -690,16 +657,16 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const u = p && players[p] ? [n, p] : [n];
       units.push(u); u.forEach(x => seen.add(x));
     }
-    const hist = { games: {}, streak: {}, opp: new Map(), part: new Map(), together: new Map(), groupShared: new Map() };
+    const hist = { games: {}, streak: {}, opp: new Map(), part: new Map(), together: new Map() };
     names.forEach(n => { hist.games[n] = 0; hist.streak[n] = 0; });
-    const nCand = ctx.anySingle || ctx.anyGroup ? 8 : 4;
+    const nCand = ctx.anySingle || reqs.length ? 8 : 4;
     const blocks = [];
     times.forEach((t, b) => {
       // Game requests in this block: force those people on; partner requests become a locked team,
       // and any fixed pair they break is split for this block only (the other half still plays).
       const here = reqs.filter(r => r.block === b);
       let blockUnits = units.filter(u => u.every(x => !away[x].has(b)));
-      const forced = new Set(here.flatMap(r => [r.a, r.b]));
+      const forced = new Set(here.flatMap(r => (r.type === "group" ? r.people : [r.a, r.b])));
       const partnerReqs = here.filter(r => r.type === "partners");
       if (partnerReqs.length) {
         const touched = new Set(partnerReqs.flatMap(r => [r.a, r.b]));
@@ -732,13 +699,6 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         const ps = gm.ta.concat(gm.tb);
         for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) hist.together.set(key(ps[i], ps[j]), (hist.together.get(key(ps[i], ps[j])) || 0) + 1);
         ps.forEach(x => playing.add(x));
-        if (ctx.anyGroup) {
-          const gids = new Set(ps.map(x => ctx.group[x]).filter(Boolean));
-          for (const gid of gids) {
-            const mem = ps.filter(x => ctx.group[x] === gid);
-            if (mem.length >= 2 && !(mem.length === 2 && players[mem[0]].partner === mem[1])) hist.groupShared.set(gid, (hist.groupShared.get(gid) || 0) + 1);
-          }
-        }
       });
       for (const n of names) {
         if (playing.has(n)) { hist.games[n]++; hist.streak[n] = 0; } else if (!away[n].has(b)) hist.streak[n]++;
@@ -755,6 +715,10 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   function requestMet(blocks, r) {
     const blk = blocks.find(x => x.time === r.time);
     if (!blk) return null;
+    if (r.type === "group") {
+      const g = blk.games.find(gm => r.people.every(x => gm.teams.flat().includes(x)));
+      return g ? { court: g.court } : null;
+    }
     for (const g of blk.games) {
       const [ta, tb] = g.teams;
       const inA = x => ta.includes(x), inB = x => tb.includes(x);
@@ -767,38 +731,59 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return null;
   }
 
-  const REQ_WORD = { partners: "partners", opponents: "opponents", court: "on the same court" };
-  // Check requests up front and give "any time" ones a block. Throws PadelError with a plain reason.
+  const REQ_WORD = { partners: "partners", opponents: "opponents", court: "on the same court", group: "together as a group" };
+  const reqLabel = r => (r.type === "group" ? r.members.join(", ") : `${r.a} and ${r.b}`);
+  // Check requests, then give each copy of each request a block. Manual requests that can't fit throw a
+  // PadelError with a plain reason; requests made from sign-ups (auto) are skipped and reported instead.
   function placeRequests(requests, players, times, plan, rng) {
-    const out = [], busy = {}, away = plan.away;
-    const mark = (n, b) => { (busy[n] = busy[n] || new Set()).add(b); };
+    const out = [], unplaced = [], busy = {}, away = plan.away;
+    const mark = (ppl, b) => ppl.forEach(n => { (busy[n] = busy[n] || new Set()).add(b); });
+    const free = (ppl, b) => ppl.every(n => !away[n].has(b) && !(busy[n] && busy[n].has(b)));
+    const items = [];
     for (const r of requests) {
-      if (!players[r.a] || !players[r.b]) throw new PadelError(`A game request names someone who isn't playing this week (${!players[r.a] ? r.a : r.b}).`);
-      if (r.a === r.b) throw new PadelError(`A game request has ${r.a} twice.`);
+      const who = r.type === "group" ? r.members : [r.a, r.b];
+      const fail = msg => { if (r.auto) { unplaced.push({ r, why: msg }); return true; } throw new PadelError(msg); };
+      const missingP = who.find(n => !players[n]);
+      if (missingP) { if (fail(`A game request names someone who isn't playing this week (${missingP}).`)) continue; }
       if (!REQ_WORD[r.type]) throw new PadelError(`Unknown request type "${r.type}".`);
-      if (players[r.a].partner === r.b && r.type !== "court") throw new PadelError(`${r.a} and ${r.b} are already a fixed pair, so they can't be ${r.type === "partners" ? "made partners" : "opponents"}. Remove that request.`);
-      if (r.time && !times.includes(r.time)) throw new PadelError(`The request for ${r.a} and ${r.b} is at ${r.time}, which isn't a block time.`);
+      if (r.type !== "group" && r.a === r.b) throw new PadelError(`A game request has ${r.a} twice.`);
+      if (r.type !== "group" && players[r.a].partner === r.b && r.type !== "court") throw new PadelError(`${r.a} and ${r.b} are already a fixed pair, so they can't be ${r.type === "partners" ? "made partners" : "opponents"}. Remove that request.`);
+      if (r.time && !times.includes(r.time)) throw new PadelError(`The request for ${reqLabel(r)} is at ${r.time}, which isn't a block time.`);
+      // everyone who has to be on court: a group brings its members' fixed partners
+      const people = r.type === "group" ? [...new Set(r.members.flatMap(n => (players[n].partner ? [n, players[n].partner] : [n])))] : who;
+      if (r.type === "group" && people.length > 4) { if (fail(`${reqLabel(r)} plus their partners is more than 4, so they can't all fit on one court.`)) continue; }
+      const count = Math.max(1, Math.min(+r.count || 1, times.length));
+      for (let i = 0; i < count; i++) items.push({ r, people, copy: i });
     }
-    for (const r of requests.filter(r => r.time)) {
-      const b = times.indexOf(r.time);
-      for (const n of [r.a, r.b]) if (away[n].has(b)) throw new PadelError(`${n} can't play at ${r.time}${players[n].partner && !(players[n].unavailable || []).includes(r.time) ? ` (their partner ${players[n].partner} can't)` : ""}, so the request with ${n === r.a ? r.b : r.a} can't go there.`);
-      for (const n of [r.a, r.b]) if (busy[n] && busy[n].has(b)) throw new PadelError(`${n} is in two game requests at ${r.time}. Move one of them to another time.`);
-      mark(r.a, b); mark(r.b, b);
-      out.push(Object.assign({}, r, { block: b }));
-    }
-    for (const r of requests.filter(r => !r.time)) {
-      const options = times.map((_, i) => i).filter(i => !away[r.a].has(i) && !away[r.b].has(i) && !(busy[r.a] && busy[r.a].has(i)) && !(busy[r.b] && busy[r.b].has(i)));
-      if (!options.length) throw new PadelError(`No time works for the request with ${r.a} and ${r.b}: there's no block they can both play that isn't already used by another of their requests.`);
-      const b = options[Math.floor(rng() * options.length)];
-      mark(r.a, b); mark(r.b, b);
-      out.push(Object.assign({}, r, { block: b, time: times[b] }));
+    // set-time requests first, then the most constrained (groups, then the busiest people)
+    items.sort((x, y) => (y.r.time ? 1 : 0) - (x.r.time ? 1 : 0) || y.people.length - x.people.length);
+    for (const it of items) {
+      const { r, people } = it;
+      let b;
+      if (r.time) {
+        b = times.indexOf(r.time);
+        const off = people.find(n => away[n].has(b));
+        if (off) { const msg = `${off} can't play at ${r.time}${!(players[off].unavailable || []).includes(r.time) && players[off].partner ? ` (their partner ${players[off].partner} can't)` : ""}, so the request for ${reqLabel(r)} can't go there.`; if (r.auto) { unplaced.push({ r, why: msg }); continue; } throw new PadelError(msg); }
+        const clash = people.find(n => busy[n] && busy[n].has(b));
+        if (clash) { const msg = `${clash} is in two game requests at ${r.time}. Move one of them to another time.`; if (r.auto) { unplaced.push({ r, why: msg }); continue; } throw new PadelError(msg); }
+      } else {
+        const options = times.map((_, i) => i).filter(i => free(people, i));
+        if (!options.length) {
+          const msg = `No time works for ${reqLabel(r)}${it.copy ? ` a ${it.copy + 1}${it.copy === 1 ? "nd" : "rd"} time` : ""}: there's no block they're all free that isn't already used by another of their requests.`;
+          if (r.auto) { unplaced.push({ r, why: msg }); continue; }
+          throw new PadelError(msg);
+        }
+        b = options[Math.floor(rng() * options.length)];
+      }
+      mark(people, b);
+      out.push(Object.assign({}, r, { block: b, time: times[b], people, copy: it.copy }));
     }
     times.forEach((t, b) => {
       const ppl = new Set();
-      out.filter(r => r.block === b).forEach(r => [r.a, r.b].forEach(n => { ppl.add(n); if (players[n].partner) ppl.add(players[n].partner); }));
+      out.filter(r => r.block === b).forEach(r => r.people.forEach(n => { ppl.add(n); if (players[n].partner) ppl.add(players[n].partner); }));
       if (ppl.size > plan.perBlock[b].courts * 4) throw new PadelError(`Too many game requests at ${t} to fit on the courts in use then.`);
     });
-    return out;
+    return { placed: out, unplaced };
   }
 
   const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
@@ -875,29 +860,36 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     else if (plan.need > plan.slots) throw new PadelError(`With the times people can't play, there are only ${plan.slots} playing places but ${plan.need} are needed for everyone's ${opts.minMinutes} minutes. Open another court, untick some times, or remove someone.`);
     const used = plan.used, order = courtOrderList(opts.courtOrder, open);
     let seed = opts.seed == null ? Math.floor(Math.random() * 1e6) + 1 : +opts.seed;
-    const requests = (opts.requests || []).map(r => ({ a: r.a, b: r.b, type: r.type, time: r.time || null }));
-    placeRequests(requests, players, times, plan, makeRng(seed));   // throws early on impossible requests
-    let res = null, attempt = 0, placed = [], hourOk = false;
+    const requests = (opts.requests || []).map(r => ({ type: r.type, a: r.a, b: r.b, members: r.members, time: r.time || null, count: r.count || 1, auto: !!r.auto, key: r.key || null }));
+    placeRequests(requests, players, times, plan, makeRng(seed));   // throws early on impossible manual requests
+    let res = null, attempt = 0, placed = [], unplaced = [], hourOk = false, best = null;
     for (; attempt < MAX_ATTEMPTS; attempt++) {
-      placed = placeRequests(requests, players, times, plan, makeRng(seed + attempt + 7919));
+      ({ placed, unplaced } = placeRequests(requests, players, times, plan, makeRng(seed + attempt + 7919)));
       res = generateOnce(players, plan, times, makeRng(seed + attempt), order, placed);
       hourOk = Object.keys(players).every(n => res.hist.games[n] >= plan.target[n]);
-      if (hourOk && placed.every(r => requestMet(res.blocks, r))) break;
+      const met = placed.filter(r => requestMet(res.blocks, r)).length;
+      const manualOk = placed.every(r => r.auto || requestMet(res.blocks, r));
+      if (hourOk && manualOk && (!best || met > best.met)) best = { res, placed, unplaced, met, attempt };
+      if (best && best.met === placed.length) break;
+      if (best && attempt >= 6) break;   // good enough: every manual request and the hour are met
     }
+    if (best) { ({ res, placed, unplaced, attempt } = best); hourOk = true; }
+    else attempt = MAX_ATTEMPTS;
     if (attempt === MAX_ATTEMPTS) {
       if (!hourOk) throw new PadelError(`Couldn't find a schedule giving everyone ${opts.minMinutes} minutes. Try Shuffle again.`);
-      const bad = placed.find(r => !requestMet(res.blocks, r));
-      throw new PadelError(`Couldn't fit the request for ${bad.a} and ${bad.b} (${REQ_WORD[bad.type]}${bad.time ? " at " + bad.time : ""}). Try a different time, or remove it.`);
+      const bad = placed.find(r => !r.auto && !requestMet(res.blocks, r));
+      throw new PadelError(`Couldn't fit the request for ${reqLabel(bad)} (${REQ_WORD[bad.type]}${bad.time ? " at " + bad.time : ""}). Try a different time, or remove it.`);
     }
     const pl = {};
-    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any", group: players[n].group || null,
+    for (const n in players) pl[n] = { skill: players[n].skill, partner: players[n].partner || null, gender: players[n].gender || "X", pref: players[n].pref || "any",
       unavailable: times.filter((t, b) => plan.away[n].has(b)) };
     return {
       settings: { courts: open.length, openCourts: open, courtOrder: order, courtsUsed: used, start: opts.start, end: opts.end, block: +opts.block, minMinutes: +opts.minMinutes, minBlocks, seed: seed + attempt, date: opts.date },
       players: pl,
       numbers: assignNumbers(Object.keys(players)),
       blocks: res.blocks,
-      requests: placed.map(r => ({ a: r.a, b: r.b, type: r.type, time: r.time, wantedTime: requests.find(q => q.a === r.a && q.b === r.b && q.type === r.type).time })),
+      requests: placed.map(r => ({ type: r.type, a: r.a, b: r.b, members: r.members, people: r.people, time: r.time, auto: r.auto, key: r.key, copy: r.copy })),
+      requestsSkipped: unplaced.map(u => ({ type: u.r.type, a: u.r.a, b: u.r.b, members: u.r.members, key: u.r.key, why: u.why })),
       pairBreaks: res.pairBreaks,
     };
   }
@@ -988,6 +980,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const counts = gamesPlayed(s);
     const pairs = active.filter(n => P[n].partner && P[P[n].partner] && P[P[n].partner].droppedFrom == null).length / 2;
     const opp = new Map(), part = new Map();
+    const asked = new Set((s.requests || []).filter(r => r.type === "partners").map(r => key(r.a, r.b)));
     const gaps = [], spreads = [];
     let short = 0, gGames = 0, gMet = 0;
     const gMisses = [];
@@ -995,7 +988,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const [ta, tb] = gm.teams;
       if (ta.includes(null) || tb.includes(null)) { short++; continue; }
       for (const x of ta) for (const y of tb) opp.set(key(x, y), (opp.get(key(x, y)) || 0) + 1);
-      for (const t of [ta, tb]) if (P[t[0]].partner !== t[1] && !(P[t[0]].group && P[t[0]].group === P[t[1]].group)) part.set(key(t[0], t[1]), (part.get(key(t[0], t[1])) || 0) + 1);
+      for (const t of [ta, tb]) if (P[t[0]].partner !== t[1] && !asked.has(key(t[0], t[1]))) part.set(key(t[0], t[1]), (part.get(key(t[0], t[1])) || 0) + 1);
       const sk = ta.concat(tb).map(x => P[x].skill);
       gaps.push(Math.abs(sk[0] + sk[1] - sk[2] - sk[3]) / 2);
       spreads.push(Math.max(...sk) - Math.min(...sk));
@@ -1019,40 +1012,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       repeatOpponents: repOpp, repeatPartners: repPart,
       avgGap: gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0,
       maxGap: gaps.length ? Math.max(...gaps) : 0, maxSpread: spreads.length ? Math.max(...spreads) : 0,
-      shortGames: short, genderGames: gGames, genderMet: gMet, genderMisses: gMisses, groups: groupSummary(s),
+      shortGames: short, genderGames: gGames, genderMet: gMet, genderMisses: gMisses,
     };
-  }
-
-  // For each friend group: games where 2+ members shared a court (beyond a fixed pair), and friend partnerships.
-  function groupSummary(s) {
-    const P = s.players, byGroup = {};
-    for (const n in P) if (P[n].group && P[n].droppedFrom == null) (byGroup[P[n].group] = byGroup[P[n].group] || []).push(n);
-    const out = [];
-    for (const id in byGroup) {
-      const members = byGroup[id];
-      if (members.length < 2) continue;
-      let shared = 0;
-      const partners = {};
-      for (const blk of s.blocks) for (const gm of blk.games) {
-        const ps = gamePlayers(gm).filter(x => P[x].group === id);
-        const fixedOnly = ps.length === 2 && P[ps[0]].partner === ps[1];
-        if (ps.length >= 2 && !fixedOnly) shared++;
-        for (const t of gm.teams) {
-          if (t[0] && t[1] && P[t[0]].group === id && P[t[1]].group === id && P[t[0]].partner !== t[1]) {
-            const k = [t[0], t[1]].sort(byName).join(" & ");
-            partners[k] = (partners[k] || 0) + 1;
-          }
-        }
-      }
-      out.push({ id, members: members.sort(byName), shared, partners });
-    }
-    return out;
   }
 
   // Each game request and whether it still holds (dropouts or swaps can undo one).
   function requestStatus(s) {
     return (s.requests || []).map(r => {
-      const gone = [r.a, r.b].filter(n => s.players[n] && s.players[n].droppedFrom != null && times(s).indexOf(s.players[n].droppedFrom) <= times(s).indexOf(r.time));
+      const gone = (r.type === "group" ? r.people || r.members : [r.a, r.b]).filter(n => s.players[n] && s.players[n].droppedFrom != null && times(s).indexOf(s.players[n].droppedFrom) <= times(s).indexOf(r.time));
       const m = requestMet(s.blocks, r);
       return Object.assign({}, r, { met: !!m, court: m ? m.court : null, why: m ? "" : gone.length ? `${gone.join(" and ")} dropped out` : "changed by a swap" });
     });
@@ -1256,7 +1223,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     if (pref < 0) pref = find(x => /\bplay\b/.test(x) && !/partner|played/.test(x));
     const skill = find(x => /skill|level|ability|standard/.test(x) && x !== "ticket_name", [pref]);
     const gender = find(x => /gender|\bsex\b/.test(x), [pref]);
-    const partner = find(x => /partner|pair/.test(x), [pref]);
+    let partner = find(x => /partner|pair/.test(x), [pref]);
+    if (partner < 0) partner = find(x => /play(ing)? with|anyone|friend|names? of|who .*play/.test(x) && !/^(name|first_name|last_name)$/.test(x), [pref]);
+    const created = find(x => x === "created_at" || /created|registered|signed up/.test(x));
     let email = find(x => /uni/.test(x) && /e-?mail/.test(x));
     if (email < 0) email = find(x => /e-?mail/.test(x));
     const username = find(x => x === "id" || /user.?name/.test(x), [partner]);
@@ -1264,7 +1233,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     if (name < 0) name = find(x => /\bname\b/.test(x) && !/first|last|partner|user|ticket/.test(x), [partner]);
     const first = find(x => /first.?name/.test(x)), last = find(x => /last.?name|surname/.test(x));
     const ex = partner >= 0 ? /e\.?\s?g\.?,?\s*([a-z]{1,6}\d{1,6})\b/i.exec(clean(headers[partner])) : null;
-    return { name, first, last, email, username, skill, gender, pref, partner, status, example: ex ? ex[1].toLowerCase() : null };
+    return { name, first, last, email, username, skill, gender, pref, partner, status, created, example: ex ? ex[1].toLowerCase() : null };
   }
 
   function parseSkill(v) {
@@ -1333,7 +1302,14 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return undefined;
   }
 
+  const titleWord = w => (w && w === w.toLowerCase() && /[a-z]/.test(w[0]) ? w[0].toUpperCase() + w.slice(1) : w);
+  const tidyName = n => clean(n).split(" ").map(titleWord).join(" ");
+  const listNames = arr => (arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1]);
+
   const USER = /^[a-z]{1,6}\d{1,6}$/i;
+  const USER_ANY = /\b[a-z]{1,6}\d{1,6}\b/gi;
+  const GAMES_EACH = 4;      // typical blocks per person, used to split a shared partner's games
+  const GROUP_GAMES = 2;     // times a group plays together on one court
 
   // Optimal-string-alignment distance: a swapped pair of characters counts as 1.
   function osa(a, b) {
@@ -1348,12 +1324,18 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return d[a.length][b.length];
   }
 
-  // "AB123, CD456" / "EF78 and GH90" / "IJ12 KL34" / "Alex, Sam Lee" -> pieces
+  // Words people add around names ("some games with ...", "with or against", "but mix it up").
+  const FILLER = new Set(("with against agains agaist agianst vs versus play playing played some games game but happy to mix it up a an bit others other " +
+    "anyone people the please if possible maybe me and or also too times time sometimes any of in on at for them him her together partner partners " +
+    "friend friends my is be would like love want okay ok etc either both all few couple").split(" "));
+  const words = s => clean(s).toLowerCase().replace(/[^a-z0-9' -]/g, " ").replace(/'/g, "").split(/\s+/).filter(Boolean);
+
+  // "AB123, CD456" / "EF78 and GH90" / "IJ12 KL34" / "XY99 - with or agains" -> pieces
   function splitPartners(text) {
     const t = clean(text);
     if (!t || NONE.test(t.toLowerCase().replace(/[.!]/g, ""))) return [];
     const out = [];
-    for (const chunk of t.split(/\s*(?:,|;|\/|&|\+|\n|\band\b|\bor\b)\s*/i)) {
+    for (const chunk of t.split(/\s*(?:,|;|\/|&|\+|\n|\s-\s|\band\b|\bor\b)\s*/i)) {
       const c = clean(chunk);
       if (!c || NONE.test(c.toLowerCase())) continue;
       const toks = c.split(" ");
@@ -1362,33 +1344,58 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return out;
   }
 
-  const titleWord = w => (w && w === w.toLowerCase() && /[a-z]/.test(w[0]) ? w[0].toUpperCase() + w.slice(1) : w);
-  const tidyName = n => clean(n).split(" ").map(titleWord).join(" ");
-  const listNames = arr => (arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1]);
+  // Name matching beyond matchPartner: a nickname/prefix ("Sam" -> Samuel), a surname they didn't sign up with
+  // ("Jo Bloggs" -> Jo), a surname one letter off or a hyphen part ("Smyth" -> Smith, "Jones" -> Lloyd-Jones).
+  function firstOk(first, t) {
+    if (first === t) return true;
+    if (t.length >= 3 && first.length >= 3 && (first.startsWith(t) || t.startsWith(first))) return true;
+    return t.length >= 4 && lev(first, t) <= 1;
+  }
+  function surOk(parts, t) {
+    return parts.some(p => p === t || (t.length >= 4 && lev(p, t) <= 1) || (t.length >= 4 && p.startsWith(t)) || (p.length >= 4 && t.startsWith(p)));
+  }
+  function scanMatch(toks, people) {
+    if (!toks.length) return undefined;
+    const hits = people.filter(p => {
+      const fi = toks.findIndex(t => firstOk(p.first, t));
+      if (fi < 0) return false;
+      if (toks.length === 1 || !p.sur.length) return true;
+      return toks.some((t, j) => j !== fi && surOk(p.sur, t));
+    });
+    if (hits.length === 1) return hits[0].name;
+    if (hits.length > 1 && toks.length > 1) {
+      // prefer people whose surname was given, then people who signed up with no surname
+      const withSur = hits.filter(p => p.sur.length);
+      if (withSur.length === 1) return withSur[0].name;
+    }
+    return hits.length ? null : undefined;   // null = more than one person fits
+  }
 
-  // Luma CSV text -> {players:[{name, skill, skillFlag, gender, pref, partner, group}], groups, notes:[{level, text}], columns}
+  // Luma CSV text -> {players, requests (shared partners + groups, by name), notes, columns}
   function importSignups(text) {
     const rows = parseCSV(text);
-    if (!rows.length) return { players: [], groups: [], notes: [{ level: "warn", text: "Nothing to import: the file or box is empty." }] };
+    if (!rows.length) return { players: [], requests: [], notes: [{ level: "warn", text: "Nothing to import: the file or box is empty." }] };
     const cols = detectColumns(rows[0], rows.slice(1));
     const notes = [];
     if (cols.name < 0 && cols.first < 0) {
-      return { players: [], groups: [], notes: [{ level: "warn", text: "Couldn't find a name column. Make sure you include the header row from the Luma CSV." }] };
+      return { players: [], requests: [], notes: [{ level: "warn", text: "Couldn't find a name column. Make sure you include the header row from the Luma CSV." }] };
     }
     const missing = [];
     if (cols.skill < 0) missing.push("skill level");
     if (cols.gender < 0) missing.push("gender");
     if (cols.pref < 0) missing.push("mixed or single-gender courts");
-    if (cols.partner < 0) missing.push("partner");
+    if (cols.partner < 0) missing.push("who they want to play with");
     if (missing.length) notes.push({ level: "warn", text: `Couldn't find a column for ${missing.join(", ")}. Check the Luma questions, or set them in the table below.` });
 
     const get = (r, i) => (i >= 0 ? clean(r[i]) : "");
     const skipped = {};
     const byKey = new Map();
-    let dupes = 0;
+    let dupes = 0, rowNo = 0;
     for (const r of rows.slice(1)) {
+      rowNo++;
       let name = get(r, cols.name);
-      if (!name) name = clean(get(r, cols.first) + " " + get(r, cols.last));
+      const firstRaw = get(r, cols.first), lastRaw = get(r, cols.last);
+      if (!name) name = clean(firstRaw + " " + lastRaw);
       if (!name) continue;
       name = tidyName(name);
       const status = get(r, cols.status).toLowerCase();
@@ -1399,16 +1406,19 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       }
       const email = get(r, cols.email).toLowerCase();
       const users = new Set();
-      if (email.includes("@")) users.add(email.split("@")[0]);
+      let emailWords = "";
+      if (email.includes("@")) { const local = email.split("@")[0]; users.add(local); emailWords = local.replace(/[^a-z0-9]/g, ""); }
       const uid = get(r, cols.username).toLowerCase();
       if (uid) users.add(uid);
       const k = email || name.toLowerCase();
       if (byKey.has(k)) dupes++;
+      const created = Date.parse(get(r, cols.created));
       byKey.set(k, {
         name, skill: parseSkill(get(r, cols.skill)),
         gender: cols.gender >= 0 ? parseGender(get(r, cols.gender)) : "X",
         pref: cols.pref >= 0 ? parsePref(get(r, cols.pref)) : "any",
-        partnerText: get(r, cols.partner), users,
+        partnerText: get(r, cols.partner), users, emailWords,
+        order: isNaN(created) ? -rowNo : created,
       });
     }
     // same name, different emails -> keep both, label them apart
@@ -1422,109 +1432,141 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const names = list.map(p => p.name);
     const userIndex = new Map();
     list.forEach(p => p.users.forEach(u => userIndex.set(u, p.name)));
+    const people = list.map(p => {
+      const w = words(p.name.replace(/\s*\(\d+\)$/, ""));
+      return { name: p.name, first: w[0] || "", sur: w.slice(1).flatMap(x => [x].concat(x.includes("-") ? x.split("-") : [])), emailWords: p.emailWords };
+    });
 
-    // ---- who asked for whom
-    const wants = {}, chosenBy = {};
-    names.forEach(n => { wants[n] = new Set(); chosenBy[n] = new Set(); });
-    const absent = [], selfRefs = [], exampleHits = [];
+    // ---- who named whom
+    const named = {};
+    names.forEach(n => { named[n] = []; });
+    const absent = [], selfRefs = [], ambiguous = [], comments = [], exampleHits = [];
+    const add = (who, hit) => { if (hit === who) { selfRefs.push(who); return; } if (!named[who].includes(hit)) named[who].push(hit); };
     for (const p of list) {
       for (const piece of splitPartners(p.partnerText)) {
-        const compact = piece.replace(/\s+/g, "").toLowerCase();
-        let hit;
-        if (USER.test(compact)) {
-          hit = userIndex.get(compact);
+        // usernames anywhere in the piece
+        const users = piece.match(USER_ANY) || [];
+        for (const raw of users) {
+          const u = raw.toLowerCase();
+          let hit = userIndex.get(u);
           if (!hit) {
-            const near = [...userIndex.keys()].filter(u => osa(u, compact) <= 1);
-            const ppl = [...new Set(near.map(u => userIndex.get(u)))];
+            const ppl = [...new Set([...userIndex.keys()].filter(x => osa(x, u) <= 1).map(x => userIndex.get(x)))];
             if (ppl.length === 1) hit = ppl[0];
           }
-          if (!hit) { absent.push({ who: p.name, piece, user: true }); continue; }
-          if (cols.example && compact === cols.example) exampleHits.push({ who: p.name, target: hit });
-        } else {
-          hit = matchPartner(piece, null, names);
-          if (hit === null) continue;
-          if (hit === undefined) { absent.push({ who: p.name, piece, user: false }); continue; }
+          if (!hit) { absent.push({ who: p.name, piece: raw.toUpperCase(), user: true }); continue; }
+          if (cols.example && u === cols.example) exampleHits.push({ who: p.name, target: hit });
+          add(p.name, hit);
         }
-        if (hit === p.name) { selfRefs.push(p.name); continue; }
-        wants[p.name].add(hit); chosenBy[hit].add(p.name);
+        const rest = piece.replace(USER_ANY, " ");
+        const toks = words(rest).filter(t => !FILLER.has(t) && !/^\d+$/.test(t));
+        if (!toks.length) continue;
+        const text = toks.join(" ");
+        let hit = matchPartner(text, null, names);
+        if (hit === null) continue;
+        if (hit === undefined) {
+          const compact = toks.join("");
+          const byEmail = people.filter(x => x.emailWords && x.emailWords === compact);
+          if (byEmail.length === 1) hit = byEmail[0].name;
+        }
+        if (hit === undefined) hit = scanMatch(toks, people);
+        if (hit === null) { ambiguous.push({ who: p.name, piece: clean(rest) }); continue; }
+        if (hit === undefined) {
+          if (toks.length >= 4) comments.push({ who: p.name, piece: clean(piece) });
+          else absent.push({ who: p.name, piece: clean(rest), user: false });
+          continue;
+        }
+        add(p.name, hit);
       }
     }
 
-    // ---- fixed pairs
-    const mutual = (a, b) => wants[a].has(b) && wants[b].has(a);
-    const mutualCount = {};
-    names.forEach(a => { mutualCount[a] = [...wants[a]].filter(b => mutual(a, b)).length; });
-    const partner = {};
-    for (const a of names) for (const b of wants[a]) {
-      if (a < b && mutual(a, b) && mutualCount[a] === 1 && mutualCount[b] === 1) { partner[a] = b; partner[b] = a; }
+    // ---- partner links: anyone who named exactly one person wants them as partner
+    const order = Object.fromEntries(list.map(p => [p.name, p.order]));
+    const linkKey = (a, b) => (a < b ? a + "\n" + b : b + "\n" + a);
+    const links = new Map();
+    for (const a of names) if (named[a].length === 1) {
+      const b = named[a][0], k = linkKey(a, b);
+      if (!links.has(k)) links.set(k, [a, b]);
     }
+    const deg = {};
+    names.forEach(n => { deg[n] = 0; });
+    links.forEach(([a, b]) => { deg[a]++; deg[b]++; });
+    const partner = {}, shared = [];
+    links.forEach(([a, b]) => {
+      if (deg[a] === 1 && deg[b] === 1) { partner[a] = b; partner[b] = a; }
+      else shared.push([a, b].sort((x, y) => order[x] - order[y]));
+    });
+
+    // ---- groups: anyone who named 2+ people plays together with them (plus their fixed partners)
+    const groupMap = new Map();
     for (const a of names) {
-      if (partner[a] || wants[a].size !== 1) continue;
-      const b = [...wants[a]][0];
-      if (!partner[b] && wants[b].size === 0 && chosenBy[b].size === 1) { partner[a] = b; partner[b] = a; }
+      if (named[a].length < 2) continue;
+      const set = new Set([a, ...named[a]]);
+      [...set].forEach(x => { if (partner[x]) set.add(partner[x]); });
+      const members = names.filter(x => set.has(x));
+      const key = members.join("\n");
+      if (!groupMap.has(key)) groupMap.set(key, { members, askedBy: [a] });
+      else groupMap.get(key).askedBy.push(a);
     }
-
-    // ---- friend groups: everyone linked by any request, 3 or more people
-    const seen = new Set(), groups = [], groupOf = {};
-    for (const n of names) {
-      if (seen.has(n)) continue;
-      const comp = [], stack = [n];
-      seen.add(n);
-      while (stack.length) {
-        const x = stack.pop(); comp.push(x);
-        for (const y of [...wants[x], ...chosenBy[x]]) if (!seen.has(y)) { seen.add(y); stack.push(y); }
-      }
-      if (comp.length >= 3) {
-        const id = "g" + (groups.length + 1);
-        const order = names.filter(x => comp.includes(x));
-        groups.push({ id, members: order });
-        order.forEach(x => { groupOf[x] = id; });
-      }
-    }
+    const groups = [...groupMap.values()];
 
     const players = list.map(p => ({
-      name: p.name, skill: p.skill || 3, skillFlag: !p.skill, gender: p.gender, pref: p.pref,
-      partner: partner[p.name] || null, group: groupOf[p.name] || null,
+      name: p.name, skill: p.skill || 3, skillFlag: !p.skill, gender: p.gender, pref: p.pref, partner: partner[p.name] || null,
     }));
+    const requests = [];
+    for (const [a, b] of shared) {
+      const busiest = Math.max(deg[a], deg[b]);
+      requests.push({ type: "partners", a, b, count: Math.max(1, Math.floor(GAMES_EACH / busiest)), auto: true });
+    }
+    for (const g of groups) {
+      if (g.members.length <= 4) requests.push({ type: "group", members: g.members, count: GROUP_GAMES, auto: true });
+    }
 
     // ---- messages
     const nPairs = Object.keys(partner).length / 2;
-    let head = `${players.length} players imported · ${nPairs} pair${nPairs === 1 ? "" : "s"}, ${players.length - 2 * nPairs} singles`;
-    if (groups.length) head += ` · ${groups.length} friend group${groups.length === 1 ? "" : "s"}`;
+    let head = `${players.length} players imported · ${nPairs} pair${nPairs === 1 ? "" : "s"} for the whole session`;
+    if (shared.length) head += ` · ${shared.length} shared partner${shared.length === 1 ? "" : "s"}`;
+    if (groups.length) head += ` · ${groups.length} group${groups.length === 1 ? "" : "s"}`;
     const sk = Object.entries(skipped).map(([k, v]) => `${v} ${k}`);
     if (sk.length) head += ` · skipped ${sk.join(", ")}`;
     if (dupes) head += ` · merged ${dupes} duplicate sign-up${dupes === 1 ? "" : "s"}`;
     notes.unshift({ level: "ok", text: head });
 
-    for (const g of groups) {
+    // shared partners, explained per shared person
+    const sharedBy = {};
+    shared.forEach(([a, b]) => { (sharedBy[a] = sharedBy[a] || []).push(b); (sharedBy[b] = sharedBy[b] || []).push(a); });
+    const explained = new Set();
+    Object.keys(sharedBy).sort((x, y) => sharedBy[y].length - sharedBy[x].length).forEach(x => {
+      if (sharedBy[x].length < 2) return;
+      const others = sharedBy[x];
+      explained.add(x);
+      const frac = others.length === 2 ? "about half the time" : `in about 1 of every ${others.length} of their games`;
+      const picks = others.filter(o => named[x].length === 1 && named[x][0] === o), by = others.filter(o => !picks.includes(o));
+      const how = [picks.length ? `picked ${listNames(picks)}` : "", by.length ? `was picked by ${listNames(by)}` : ""].filter(Boolean).join(" and ");
+      notes.push({ level: "info", text: `${x} ${how}, so ${x} partners each of them ${frac} and plays as a single otherwise.` });
+    });
+    const describe = g => {
       const done = new Set(), parts = [];
       for (const m of g.members) {
         if (done.has(m)) continue;
-        if (partner[m]) { parts.push(`${m} & ${partner[m]}`); done.add(m); done.add(partner[m]); }
+        if (partner[m] && g.members.includes(partner[m])) { parts.push(`${m} & ${partner[m]}`); done.add(m); done.add(partner[m]); }
         else { parts.push(m); done.add(m); }
       }
-      const singles = g.members.filter(m => !partner[m]);
-      let t = `${listNames(parts)} asked to play together. `;
-      if (!singles.length) t += "The pairs stay as they are and will share a court a couple of times.";
-      else if (singles.length === g.members.length) t += "They'll rotate as partners and share a court a couple of times.";
-      else if (singles.length === 1) t += `${singles[0]} will share a court with them a couple of times.`;
-      else t += `${listNames(singles)} will rotate partners within the group, and everyone in it will share a court a couple of times.`;
-      notes.push({ level: "info", text: t });
+      return listNames(parts);
+    };
+    for (const g of groups) {
+      if (g.members.length <= 4) notes.push({ level: "info", text: `${describe(g)} will play on the same court together ${GROUP_GAMES} times (named by ${listNames(g.askedBy)}). Partners mix otherwise.` });
+      else notes.push({ level: "warn", text: `${describe(g)} is too many for one court (named by ${listNames(g.askedBy)}), so they won't get group games. Add a game request if you want some of them together.` });
     }
     for (const a of absent) {
-      const hasOther = wants[a.who].size > 0;
-      if (a.user) notes.push({ level: hasOther ? "info" : "warn", text: `${a.who} asked for ${a.piece}, who hasn't signed up${hasOther ? "." : ", so they're in as a single. Pick their partner in the table if they're here."}` });
-      else notes.push({ level: hasOther ? "info" : "warn", text: `${a.who}'s partner "${a.piece}" didn't match anyone who signed up${hasOther ? "." : ", so they're in as a single. Pick their partner in the table if they're here."}` });
+      const hasOther = named[a.who].length > 0;
+      if (a.user) notes.push({ level: hasOther ? "info" : "warn", text: `${a.who} asked for ${a.piece}, who hasn't signed up${hasOther ? "." : ", so they're in as a single."}` });
+      else notes.push({ level: hasOther ? "info" : "warn", text: `${a.who} asked for "${a.piece}", who didn't match anyone who signed up${hasOther ? "." : ", so they're in as a single. Pick their partner in the table if they're here."}` });
     }
-    [...new Set(selfRefs)].forEach(n => notes.push({ level: "info", text: `${n} put their own username as partner, so they're in as a single.` }));
+    for (const a of ambiguous) notes.push({ level: "warn", text: `${a.who} asked for "${a.piece}", which could be more than one person. Set it in the table or add a game request.` });
+    for (const c of comments) notes.push({ level: "info", text: `${c.who} wrote "${c.piece}". Treated as a comment, not a name.` });
+    [...new Set(selfRefs)].forEach(n => notes.push({ level: "info", text: `${n} named themselves, so that's ignored.` }));
     for (const e of exampleHits) {
-      if (!mutual(e.who, e.target)) notes.push({ level: "warn", text: `${e.who} put ${cols.example.toUpperCase()}, which is the example username in the question. It's been matched to ${e.target}. Check they really meant them.` });
-    }
-    for (const a of names) {
-      if (wants[a].size === 1 && !partner[a] && !groupOf[a]) {
-        const b = [...wants[a]][0];
-        notes.push({ level: "warn", text: `${a} put ${b} as their partner, but ${b} ${partner[b] ? "is already paired with " + partner[b] : "asked for someone else"}. ${a} is in as a single for now.` });
-      }
+      if (!named[e.target].includes(e.who)) notes.push({ level: "warn", text: `${e.who} put ${cols.example.toUpperCase()}, which is the example username in the question. It's been matched to ${e.target}. Check they really meant them.` });
     }
     const noSkill = players.filter(p => p.skillFlag);
     if (noSkill.length) notes.push({ level: "warn", text: `No readable skill level for ${noSkill.map(p => p.name).join(", ")}. Set to 3 for now, highlighted below.` });
@@ -1545,10 +1587,11 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       if (asking.length && able.length < 8) {
         const word = g === "F" ? "women" : "men";
         const others = able.filter(p => !asking.includes(p)).map(p => p.name);
-        notes.push({ level: "warn", text: `${listNames(asking.map(p => p.name))} asked for ${word}-only courts, but only ${able.length - 1} other ${word} can join (${listNames(others) || "nobody else asked"}), so the same few will keep playing together. Switch to "Any court" in the table if that's not wanted.` });
+        const one = g === "F" ? "woman" : "man";
+        notes.push({ level: "warn", text: `${listNames(asking.map(p => p.name))} asked for ${word}-only courts, but only ${able.length - 1} other ${able.length - 1 === 1 ? one : word} can join (${listNames(others) || "nobody else asked"}), so the same few will keep playing together. Switch to "Any court" in the table if that's not wanted.` });
       }
     }
-    return { players, groups, notes, columns: cols };
+    return { players, requests, notes, columns: cols, named };
   }
 
   // Fake Luma export in the same shape as the real one, for trying the app. Clearly example data.
@@ -1889,13 +1932,28 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const out = {};
     for (const p of state.players) {
       const q = p.partner && byId(p.partner);
-      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref, group: p.group || null, unavailable: (p.unavailable || []).slice() };
+      out[p.name] = { skill: p.skill, partner: q ? q.name : null, gender: p.gender, pref: p.pref, unavailable: (p.unavailable || []).slice() };
     }
     return out;
   }
   function engineRequests() {
-    return (state.requests || []).map(r => ({ a: byId(r.a) && byId(r.a).name, b: byId(r.b) && byId(r.b).name, type: r.type, time: r.time || null }))
-      .filter(r => r.a && r.b);
+    return (state.requests || []).map(r => {
+      if (r.type === "group") {
+        const members = r.members.map(byId).filter(Boolean).map(x => x.name);
+        return members.length >= 2 ? { type: "group", members, count: r.count || 2, auto: !!r.auto, key: r.id } : null;
+      }
+      const A = byId(r.a), B = byId(r.b);
+      return A && B ? { type: r.type, a: A.name, b: B.name, time: r.time || null, count: r.count || 1, auto: !!r.auto, key: r.id } : null;
+    }).filter(Boolean);
+  }
+  function reqValid(r) { return r.type === "group" ? r.members.filter(byId).length >= 2 : byId(r.a) && byId(r.b); }
+  function reqText(r) {
+    const word = { partners: "partners", opponents: "opponents", court: "on the same court" };
+    const n = r.count || 1, times = n > 1 ? ` ${n} times` : "";
+    if (r.type === "group") return `<b>Group:</b> ${r.members.map(byId).filter(Boolean).map(x => esc(x.name)).join(", ")} <span class="when">· together on one court${times || " once"}${r.auto ? " · from sign-ups" : ""}</span>`;
+    const A = byId(r.a), B = byId(r.b);
+    const pairNote = [A, B].filter(x => x.partner && x.partner !== (x === A ? B.id : A.id)).map(x => `${x.name} & ${byId(x.partner).name} split for that game`);
+    return `<b>${esc(A.name)}</b> & <b>${esc(B.name)}</b> ${word[r.type]}${times} <span class="when">· ${r.time ? "at " + r.time : "any time"}${r.auto ? " · from sign-ups (shared partner)" : ""}${pairNote.length && r.type === "partners" ? " · " + esc(pairNote.join(", ")) : ""}</span>`;
   }
   let reqType = "partners";
   function renderRequests() {
@@ -1912,14 +1970,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     $("reqTime").innerHTML = `<option value="">Any time</option>` + ts.map(t => `<option value="${t}">At ${t}</option>`).join("");
     if (ts.includes(keepT)) $("reqTime").value = keepT;
     document.querySelectorAll("#reqType [data-t]").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === reqType));
-    const word = { partners: "partners", opponents: "opponents", court: "on the same court" };
-    state.requests = (state.requests || []).filter(r => byId(r.a) && byId(r.b));
-    $("reqList").innerHTML = state.requests.map(r => {
-      const A = byId(r.a), B = byId(r.b);
-      const pairNote = [A, B].filter(x => x.partner && x.partner !== (x === A ? B.id : A.id)).map(x => `${x.name} & ${byId(x.partner).name} split for that game`);
-      return `<li><span><b>${esc(A.name)}</b> & <b>${esc(B.name)}</b> ${word[r.type]} <span class="when">· ${r.time ? "at " + r.time : "any time"}${pairNote.length && r.type === "partners" ? " · " + esc(pairNote.join(", ")) : ""}</span></span>
-        <button type="button" class="icon-btn" data-req="${r.id}" aria-label="Remove request">&times;</button></li>`;
-    }).join("");
+    state.requests = (state.requests || []).filter(reqValid);
+    $("reqList").innerHTML = state.requests.map(r => `<li><span>${reqText(r)}</span>
+        <button type="button" class="icon-btn" data-req="${r.id}" aria-label="Remove request">&times;</button></li>`).join("");
     $("reqPanel").hidden = state.players.length < 2;
   }
   $("reqType").addEventListener("click", e => { const b = e.target.closest("[data-t]"); if (!b) return; reqType = b.dataset.t; renderRequests(); });
@@ -1960,6 +2013,9 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     state.players = res.players.map(p => Object.assign({ id: pid() }, p));
     const idOf = {}; state.players.forEach(p => { idOf[p.name] = p.id; });
     state.players.forEach(p => { p.partner = p.partner ? idOf[p.partner] : null; });
+    state.requests = (res.requests || []).map(r => (r.type === "group"
+      ? { id: pid(), type: "group", members: r.members.map(n => idOf[n]), count: r.count, auto: true }
+      : { id: pid(), type: r.type, a: idOf[r.a], b: idOf[r.b], count: r.count, auto: true, time: null }));
     state.notes = res.notes; state.example = false;
     if (state.schedule) state.stale = true;
     $("pasteBox").value = "";
@@ -2056,7 +2112,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     box.innerHTML = `<div class="players"><div class="prow head"><span>Name</span><span>Skill</span><span>Partner</span><span>Gender</span><span>Courts</span><span></span></div>${rows}</div>`;
   }
 
-  function groupMates(p) { return p.group ? state.players.filter(q => q.group === p.group && q.id !== p.id) : []; }
+  function groupsOf(p) { return (state.requests || []).filter(r => r.type === "group" && r.members.includes(p.id)); }
+  function sharesOf(p) { return (state.requests || []).filter(r => r.type === "partners" && r.auto && (r.a === p.id || r.b === p.id)); }
   function sessionTimes() { try { return E.blockTimes(state.settings.start, state.settings.end, +state.settings.block); } catch (e) { return []; } }
   function timesTag(p) {
     const ts = sessionTimes(), own = (p.unavailable || []).filter(t => ts.includes(t));
@@ -2071,14 +2128,15 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return `<div class="times-row"><span>Tap the times ${esc(p.name)} <b>can't</b> play:</span>${sessionTimes().map(t => `<button type="button" id="tt-${p.id}-${t.replace(":", "")}" data-act="away" data-id="${p.id}" data-t="${t}" aria-pressed="${own.includes(t)}">${t}</button>`).join("")}<button type="button" class="linkish" data-act="times" data-id="${p.id}">Done</button></div>`;
   }
   function groupTag(p) {
-    const mates = groupMates(p);
-    if (!mates.length) return "";
-    return `<span class="group-tag">Group with ${esc(mates.map(q => q.name).join(", "))} <button type="button" class="linkish" id="ug-${p.id}" data-act="ungroup" data-id="${p.id}" aria-label="Take ${esc(p.name)} out of this group">remove</button></span>`;
+    const parts = groupsOf(p).map(r => `Group with ${esc(r.members.filter(x => x !== p.id).map(byId).filter(Boolean).map(q => q.name).join(", "))}`);
+    sharesOf(p).forEach(r => { const o = byId(r.a === p.id ? r.b : r.a); if (o) parts.push(`Partners ${esc(o.name)} ${r.count || 1}x`); });
+    if (!parts.length) return "";
+    return `<span class="group-tag">${parts.join(" · ")} <button type="button" class="linkish" id="ug-${p.id}" data-act="ungroup" data-id="${p.id}" aria-label="Take ${esc(p.name)} out of their groups and shared partners">remove</button></span>`;
   }
   function leaveGroup(p) {
-    const rest = groupMates(p);
-    p.group = null;
-    if (rest.length < 2 || (rest.length === 2 && rest[0].partner === rest[1].id)) rest.forEach(q => { q.group = null; });
+    state.requests = (state.requests || [])
+      .map(r => (r.type === "group" && r.members.includes(p.id) ? Object.assign({}, r, { members: r.members.filter(x => x !== p.id) }) : r))
+      .filter(r => (r.type === "group" ? r.members.length >= 2 : !(r.auto && (r.a === p.id || r.b === p.id))));
   }
   $("playersBox").addEventListener("click", e => {
     const b = e.target.closest("[data-act]");
@@ -2093,10 +2151,10 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       p.unavailable = sessionTimes().filter(x => set.has(x));
       withFocus(playersChanged); return;
     }
-    if (b.dataset.act === "ungroup") { leaveGroup(p); playersChanged(); toast(`${p.name} taken out of the group`); }
+    if (b.dataset.act === "ungroup") { leaveGroup(p); playersChanged(); toast(`${p.name} taken out of their groups and shared partners`); }
     if (b.dataset.act === "del") {
       leaveGroup(p);
-      state.requests = (state.requests || []).filter(r => r.a !== p.id && r.b !== p.id);
+      state.requests = (state.requests || []).filter(r => r.type === "group" || (r.a !== p.id && r.b !== p.id));
       state.players.forEach(q => { if (q.partner === p.id) q.partner = null; });
       state.players = state.players.filter(q => q !== p);
       playersChanged(); toast(`Removed ${p.name}`);
@@ -2357,17 +2415,20 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       stats.push([m.genderMisses.length ? "bad" : "good", "Single-gender", `${m.genderMet} of ${m.genderGames} games`,
         m.genderMisses.length ? `On a mixed court: ${miss}${m.genderMisses.length > 6 ? "..." : ""}. The numbers didn't allow it without cutting play time.` : "Every single-gender request is met"]);
     }
-    for (const g of m.groups) {
-      const parts = Object.entries(g.partners).map(([k, v]) => `${k}${v > 1 ? " " + v + "x" : ""}`);
-      stats.push([g.shared >= 2 ? "good" : "bad", "Friend group", `${g.shared} game${g.shared === 1 ? "" : "s"} together`,
-        `${g.members.join(", ")}${parts.length ? ". Partnered: " + parts.join(", ") : ""}`]);
-    }
-    const reqs = E.requestStatus(state.schedule);
-    if (reqs.length) {
-      const met = reqs.filter(r => r.met).length;
-      const word = { partners: "partners", opponents: "opponents", court: "same court" };
-      stats.push([met === reqs.length ? "good" : "bad", "Game requests", `${met} of ${reqs.length} met`,
-        reqs.map(r => `${r.a} & ${r.b} ${word[r.type]}: ${r.met ? `${r.time} C${r.court}` : `not met (${r.why})`}`).join(". ")]);
+    const reqs = E.requestStatus(state.schedule), skipped = state.schedule.requestsSkipped || [];
+    if (reqs.length || skipped.length) {
+      const word = { partners: "partners", opponents: "opponents", court: "same court", group: "together" };
+      const byKey = new Map();
+      reqs.forEach(r => { const k = r.key || `${r.type}|${r.a}|${r.b}|${(r.members || []).join(",")}`; if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(r); });
+      const lines = [...byKey.values()].map(list => {
+        const r = list[0], who = r.type === "group" ? r.members.join(", ") : `${r.a} & ${r.b}`;
+        return `${who} ${word[r.type]}: ${list.map(x => (x.met ? `${x.time} C${x.court}` : `not met (${x.why})`)).join(", ")}`;
+      });
+      skipped.forEach(x => lines.push(`${x.type === "group" ? x.members.join(", ") : x.a + " & " + x.b}: skipped (${x.why})`));
+      const met = reqs.filter(r => r.met).length, total = reqs.length + skipped.length;
+      const groupsN = new Set(reqs.filter(r => r.type === "group").map(r => r.key)).size;
+      stats.push([met === total ? "good" : "bad", "Game requests and groups", `${met} of ${total} met`,
+        (groupsN ? `${groupsN} group${groupsN === 1 ? "" : "s"} play together. ` : "") + lines.join(". ")]);
     }
     if (m.shortGames) stats.push(["bad", "Short games", String(m.shortGames), "Games missing a player after dropouts"]);
     $("summaryBox").innerHTML = stats.map(([cls, k, v, d]) => `<div class="stat ${cls}"><span class="k">${k}</span><span class="v">${esc(v)}</span><span class="d">${esc(d)}</span></div>`).join("");

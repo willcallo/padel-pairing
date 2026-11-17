@@ -198,8 +198,8 @@ const LUMA = [
   'g5,"O\'Neill, Kate",Kate,O\'Neill,k@x,approved,ko@uni,Intermediate,female,"Same gender, please",none',
   'g6,Tom Reed,Tom,Reed,t@x,waitlist,tr@uni,3,Male,Mixed,',
   'g7,Ella Patel,Ella,Patel,e@x,declined,ep@uni,3,Female,Mixed,',
-  'g8,Ben Clark,Ben,Clark,b@x,approved,bc@uni,3,Male,Mixed,Sammy',
-  'g9,Ben Clark,Ben,Clark,b@x,approved,bc@uni,4,Male,Mixed,Sammy',
+  'g8,Ben Clark,Ben,Clark,b@x,approved,bc@uni,3,Male,Mixed,Rowan',
+  'g9,Ben Clark,Ben,Clark,b@x,approved,bc@uni,4,Male,Mixed,Rowan',
   'g10,Charlie Carr,Charlie,Carr,c@x,approved,cc@uni,3,Non-binary,Single gender,n/a',
   'g11,Zed,Zed,,z@x,approved,z@uni,banana,Prefer not to say,Mixed,-',
 ].join("\r\n");
@@ -213,7 +213,7 @@ test("Luma import", () => {
   assert.equal(by["Jo Brown"].partner, "Alex Smith");
   assert.equal(by["Sam Lee"].partner, "Priya Shah"); // typo matched, one-sided
   assert.equal(by["Priya Shah"].partner, "Sam Lee");
-  assert.equal(by["Ben Clark"].partner, null);       // "Sammy" didn't sign up
+  assert.equal(by["Ben Clark"].partner, null);       // "Rowan" didn't sign up
   assert.equal(by["Ben Clark"].skill, 4);            // later duplicate wins
   assert.equal(by["Alex Smith"].skill, 4);
   assert.equal(by["Sam Lee"].skill, 2);
@@ -229,7 +229,7 @@ test("Luma import", () => {
   assert.match(text, /1 waitlist/);
   assert.match(text, /1 declined/);
   assert.match(text, /merged 1 duplicate/);
-  assert.match(text, /"Sammy" didn't match/);
+  assert.match(text, /"Rowan", who didn't match/);
   assert.match(text, /Charlie Carr asked for single-gender/);
   assert.match(text, /Jo Brown asked for single-gender courts but is paired with Alex Smith/);
   assert.match(text, /No readable skill level for Zed/);
@@ -301,42 +301,73 @@ test("real Luma shape: columns, skills, usernames, groups", () => {
   assert.ok(by["Rae Last"], "row without name/status built from first + last");
   assert.equal(by["Amy One"].partner, "Bob Two");
   assert.equal(by["Cal Three"].partner, "Dan Four");
-  assert.equal(by["Eve Five"].partner, "Fay Six");
+  assert.equal(by["Eve Five"].partner, null, "named 2 people -> no fixed partner");
   assert.equal(by["Gus Seven"].partner, "Hal Eight");
   assert.equal(by["Lou Twelve"].partner, null);
-  // groups
-  const grp = n => r.groups.find(g => g.members.includes(n));
+  // groups: everyone who named 2+ people, plus named people's fixed partners; 2 games together
+  const groups = r.requests.filter(q => q.type === "group");
+  const grp = n => groups.find(g => g.members.includes(n));
   same([...grp("Eve Five").members].sort(), ["Eve Five", "Fay Six", "Gus Seven", "Hal Eight"]);
   same([...grp("Kit").members].sort(), ["Ivy Nine", "Jon Ten", "Kit"]);
+  same([...grp("Nia Fourteen").members].sort(), ["Nia Fourteen", "Oz Fifteen", "Pat Sixteen"]);
+  assert.ok(groups.every(g => g.count === 2 && g.auto));
   ["Ivy Nine", "Jon Ten", "Kit"].forEach(n => assert.equal(by[n].partner, null));
-  same([...grp("Nia Fourteen").members].sort(), ["Nia Fourteen", "Oz Fifteen", "Pat Sixteen", "Rae Last"]);
   assert.equal(grp("Amy One"), undefined);
+  // Pat and Rae both named only Nia -> Nia is shared, half each
+  const shared = r.requests.filter(q => q.type === "partners").map(q => [q.a, q.b].sort().join("+") + "x" + q.count).sort();
+  same(shared, ["Nia Fourteen+Pat Sixteenx2", "Nia Fourteen+Rae Lastx2"]);
+  assert.equal(by["Nia Fourteen"].partner, null);
   const text = r.notes.map(n => n.text).join("\n");
   assert.match(text, /Cal Three asked for ZZ999, who hasn't signed up\./);
-  assert.match(text, /Lou Twelve put their own username/);
-  assert.match(text, /"Max Nobody" didn't match/);
+  assert.match(text, /Lou Twelve named themselves/);
+  assert.match(text, /"Max Nobody", who didn't match/);
   assert.match(text, /Sol Nine asked for AB1234, who hasn't signed up/);
   assert.match(text, /Quin Ab asked for women-only courts/);
-  assert.match(text, /3 friend groups/);
+  assert.match(text, /3 groups/);
+  assert.match(text, /Nia Fourteen was picked by Pat Sixteen and Rae Last, so Nia Fourteen partners each of them about half the time/);
 });
 
-test("friend groups: trio rotates, two pairs share a court, hour kept", () => {
+test("group games and shared partners in the engine", () => {
   for (let seed = 0; seed < 4; seed++) {
-    const players = roster(40, 2, seed, { genders: () => "M" });
-    // trio of singles + a second fixed pair grouped with pair 0
-    ["Player 10", "Player 11", "Player 12"].forEach(n => { players[n].group = "t"; players[n].skill = 3; });
-    ["Player 00", "Player 01", "Player 02", "Player 03"].forEach(n => { players[n].group = "q"; players[n].skill = 4; });
-    const s = E.generate(players, { seed });
+    const players = roster(40, 2, seed, { genders: () => "M" });   // Player 00+01, 02+03 fixed pairs
+    const requests = [
+      { type: "group", members: ["Player 10", "Player 11", "Player 12", "Player 13"], count: 2, auto: true },   // 4 singles
+      { type: "group", members: ["Player 20", "Player 21", "Player 22"], count: 2, auto: true },                // 3 singles
+      { type: "group", members: ["Player 30", "Player 00"], count: 2, auto: true },                             // brings Player 01 along
+      { type: "partners", a: "Player 25", b: "Player 26", count: 2, auto: true },                                // shared: 26 with 25 and 27
+      { type: "partners", a: "Player 27", b: "Player 26", count: 2, auto: true },
+    ];
+    const s = E.generate(players, { seed, requests });
     checkBasic(s);
-    assert.ok(Math.min(...Object.values(E.gamesPlayed(s))) >= 4);
-    const m = E.summary(s);
-    const trio = m.groups.find(g => g.id === "t"), quad = m.groups.find(g => g.id === "q");
-    assert.ok(Object.keys(trio.partners).length >= 2, `trio partners ${JSON.stringify(trio.partners)}`);
-    assert.ok(Object.values(trio.partners).every(v => v <= 2), "no friend pairing more than twice");
-    assert.ok(quad.shared >= 2, `two pairs shared ${quad.shared}`);
-    assert.equal(m.repeatPartners, 0, "friend repeats aren't counted as problems");
-    assert.ok(m.avgGap < 0.6);
+    same(E.validate(s).problems, [], `seed ${seed}`);
+    assert.ok(Math.min(...Object.values(E.gamesPlayed(s))) >= 4, "hour kept");
+    const st = E.requestStatus(s);
+    assert.equal(st.length, 10, "2 copies of each request");
+    assert.ok(st.every(x => x.met), JSON.stringify(st.filter(x => !x.met)));
+    // group of 4 = one whole game, twice, in different blocks, with different partner splits
+    const quad = st.filter(x => x.type === "group" && x.members.length === 4);
+    assert.notEqual(quad[0].time, quad[1].time);
+    const splits = quad.map(q => {
+      const g = s.blocks.find(b => b.time === q.time).games.find(g => g.court === q.court);
+      return g.teams.map(t => t.slice().sort().join("+")).sort().join(" v ");
+    });
+    assert.notEqual(splits[0], splits[1], "partners change between the two group games");
+    // the group with a fixed-pair member keeps the pair together on that court
+    for (const q of st.filter(x => x.type === "group" && x.members.includes("Player 00"))) {
+      const g = s.blocks.find(b => b.time === q.time).games.find(g => g.court === q.court);
+      assert.ok(g.teams.some(t => t.includes("Player 00") && t.includes("Player 01")));
+    }
+    // shared partner: 26 partners 25 twice and 27 twice, in four different blocks
+    const sh = st.filter(x => x.type === "partners");
+    assert.equal(new Set(sh.map(x => x.time)).size, 4);
+    assert.ok(E.summary(s).repeatPartners <= 1, "requested repeats (25+26, 26+27) aren't flagged; other repeats stay rare");
   }
+  // a group that can't fit on one court is reported, not built
+  const r = I.importSignups(["name,email,Skill,Gender,What would you like to play?,Add names of anyone you want to play with here",
+    "A One,a1@u.uk,3,Male,Mixed,\"B Two, C Three, D Four, E Five\"", "B Two,b2@u.uk,3,Male,Mixed,", "C Three,c3@u.uk,3,Male,Mixed,",
+    "D Four,d4@u.uk,3,Male,Mixed,", "E Five,e5@u.uk,3,Male,Mixed,"].join("\n"));
+  assert.equal(r.requests.length, 0);
+  assert.match(r.notes.map(n => n.text).join(" "), /too many for one court/);
 });
 
 test("court closures: 6 and 7 closed", () => {
