@@ -147,6 +147,7 @@ details.settings .grid { display: grid; grid-template-columns: repeat(auto-fit, 
 label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .courts-field { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .req-row select { min-width: 0; }
+.team-label { font-size: 13px; font-weight: 600; color: var(--muted); min-width: 72px; }
 .req-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .req-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--fill); font-size: 14px; }
 .req-list .when { color: var(--muted); font-size: 13px; }
@@ -318,18 +319,26 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
 
     <div class="panel" id="reqPanel">
       <h2>Game requests</h2>
-      <p class="hint">Put two people in the same game once, e.g. as partners. If one of them is in a fixed pair, that pair is split for that one game only, and the other half still plays at that time.</p>
+      <p class="hint">Put people in the same game, e.g. two as partners, or a whole match like Sam &amp; Jo vs Alex &amp; Kim. If someone is in a fixed pair with a person outside the request, that pair is split for that one game only, and the other half still plays at that time.</p>
+      <div class="seg" id="reqType" role="group" aria-label="What kind of request">
+        <button class="btn" type="button" data-t="partners" aria-pressed="true">Partners</button>
+        <button class="btn" type="button" data-t="opponents" aria-pressed="false">Opponents</button>
+        <button class="btn" type="button" data-t="court" aria-pressed="false">Same court</button>
+        <button class="btn" type="button" data-t="match" aria-pressed="false">Match</button>
+      </div>
       <div class="row req-row">
+        <span class="team-label" id="reqTeam1" hidden>Team 1</span>
         <select id="reqA" class="grow" aria-label="First person"></select>
         <select id="reqB" class="grow" aria-label="Second person"></select>
       </div>
+      <div class="row req-row" id="reqTeam2Row" hidden>
+        <span class="team-label">vs Team 2</span>
+        <select id="reqC" class="grow" aria-label="Team 2, first person"></select>
+        <select id="reqD" class="grow" aria-label="Team 2, second person"></select>
+      </div>
       <div class="row req-row">
-        <div class="seg" id="reqType" role="group" aria-label="How">
-          <button class="btn" type="button" data-t="partners" aria-pressed="true">Partners</button>
-          <button class="btn" type="button" data-t="opponents" aria-pressed="false">Opponents</button>
-          <button class="btn" type="button" data-t="court" aria-pressed="false">Same court</button>
-        </div>
         <select id="reqTime" aria-label="When"></select>
+        <select id="reqCount" aria-label="How many times"><option value="1">Once</option><option value="2">2 times</option><option value="3">3 times</option></select>
         <button class="btn primary" type="button" id="reqAdd">Add request</button>
       </div>
       <ul class="req-list" id="reqList"></ul>
@@ -581,6 +590,11 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
               c -= W_REQ * inGame * (inGame - 1) / 2;
               continue;
             }
+            if (r.type === "match") {
+              const i1 = ps.indexOf(r.teams[0][0]), i2 = ps.indexOf(r.teams[1][0]);
+              if (i1 >= 0 && i2 >= 0 && (i1 < 2) !== (i2 < 2)) c -= 2 * W_REQ;
+              continue;
+            }
             const ia = ps.indexOf(r.a), ib = ps.indexOf(r.b);
             if (ia < 0 || ib < 0) continue;
             if (r.type === "opponents" && (ia < 2) === (ib < 2)) continue;
@@ -666,20 +680,24 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       // and any fixed pair they break is split for this block only (the other half still plays).
       const here = reqs.filter(r => r.block === b);
       let blockUnits = units.filter(u => u.every(x => !away[x].has(b)));
-      const forced = new Set(here.flatMap(r => (r.type === "group" ? r.people : [r.a, r.b])));
-      const partnerReqs = here.filter(r => r.type === "partners");
+      const forced = new Set(here.flatMap(r => (r.type === "group" || r.type === "match" ? r.people : [r.a, r.b])));
+      // teams locked together in this block: partner requests and both sides of a match
+      const partnerReqs = here.filter(r => r.type === "partners").map(r => ({ a: r.a, b: r.b }))
+        .concat(here.filter(r => r.type === "match").flatMap(r => r.teams.map(t => ({ a: t[0], b: t[1] }))));
       if (partnerReqs.length) {
         const touched = new Set(partnerReqs.flatMap(r => [r.a, r.b]));
         const base = blockUnits;
         blockUnits = [];
         for (const u of base) {
           if (!u.some(x => touched.has(x))) { blockUnits.push(u); continue; }
+          const same = u.length === 2 && partnerReqs.find(r => u.includes(r.a) && u.includes(r.b));
+          if (same) { same.kept = true; blockUnits.push(u); continue; }   // a fixed pair who are teammates in the match
           if (u.length === 2) {
             pairBreaks.push({ time: t, pair: u.slice() });
             u.forEach(x => { if (!touched.has(x)) { blockUnits.push([x]); forced.add(x); } });
           }
         }
-        partnerReqs.forEach(r => blockUnits.push([r.a, r.b]));
+        partnerReqs.filter(r => !r.kept).forEach(r => blockUnits.push([r.a, r.b]));
       }
       let best = null;
       for (let c = 0; c < (here.length ? Math.max(nCand, 6) : nCand); c++) {
@@ -719,6 +737,11 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       const g = blk.games.find(gm => r.people.every(x => gm.teams.flat().includes(x)));
       return g ? { court: g.court } : null;
     }
+    if (r.type === "match") {
+      const same = (t, u) => t.length === 2 && u.every(x => t.includes(x));
+      const g = blk.games.find(gm => (same(gm.teams[0], r.teams[0]) && same(gm.teams[1], r.teams[1])) || (same(gm.teams[0], r.teams[1]) && same(gm.teams[1], r.teams[0])));
+      return g ? { court: g.court } : null;
+    }
     for (const g of blk.games) {
       const [ta, tb] = g.teams;
       const inA = x => ta.includes(x), inB = x => tb.includes(x);
@@ -731,8 +754,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     return null;
   }
 
-  const REQ_WORD = { partners: "partners", opponents: "opponents", court: "on the same court", group: "together as a group" };
-  const reqLabel = r => (r.type === "group" ? r.members.join(", ") : `${r.a} and ${r.b}`);
+  const REQ_WORD = { partners: "partners", opponents: "opponents", court: "on the same court", group: "together as a group", match: "against each other" };
+  const reqLabel = r => (r.type === "group" ? r.members.join(", ") : r.type === "match" ? `${r.teams[0].join(" & ")} vs ${r.teams[1].join(" & ")}` : `${r.a} and ${r.b}`);
   // Check requests, then give each copy of each request a block. Manual requests that can't fit throw a
   // PadelError with a plain reason; requests made from sign-ups (auto) are skipped and reported instead.
   function placeRequests(requests, players, times, plan, rng) {
@@ -741,13 +764,20 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const free = (ppl, b) => ppl.every(n => !away[n].has(b) && !(busy[n] && busy[n].has(b)));
     const items = [];
     for (const r of requests) {
-      const who = r.type === "group" ? r.members : [r.a, r.b];
+      const who = r.type === "group" ? r.members : r.type === "match" ? (r.teams || []).flat() : [r.a, r.b];
       const fail = msg => { if (r.auto) { unplaced.push({ r, why: msg }); return true; } throw new PadelError(msg); };
       const missingP = who.find(n => !players[n]);
       if (missingP) { if (fail(`A game request names someone who isn't playing this week (${missingP}).`)) continue; }
       if (!REQ_WORD[r.type]) throw new PadelError(`Unknown request type "${r.type}".`);
-      if (r.type !== "group" && r.a === r.b) throw new PadelError(`A game request has ${r.a} twice.`);
-      if (r.type !== "group" && players[r.a].partner === r.b && r.type !== "court") throw new PadelError(`${r.a} and ${r.b} are already a fixed pair, so they can't be ${r.type === "partners" ? "made partners" : "opponents"}. Remove that request.`);
+      if (r.type === "match") {
+        if (who.length !== 4 || r.teams.some(t => t.length !== 2)) throw new PadelError("A match needs two people on each side.");
+        const dup = who.find((n, i) => who.indexOf(n) !== i);
+        if (dup) throw new PadelError(`${dup} is in the match ${reqLabel(r)} twice.`);
+        const across = who.find(n => players[n].partner && who.includes(players[n].partner) && !r.teams.some(t => t.includes(n) && t.includes(players[n].partner)));
+        if (across) throw new PadelError(`${across} and ${players[across].partner} are a fixed pair, so they can't be on opposite sides in ${reqLabel(r)}.`);
+      }
+      if (r.type !== "group" && r.type !== "match" && r.a === r.b) throw new PadelError(`A game request has ${r.a} twice.`);
+      if (r.type !== "group" && r.type !== "match" && players[r.a].partner === r.b && r.type !== "court") throw new PadelError(`${r.a} and ${r.b} are already a fixed pair, so they can't be ${r.type === "partners" ? "made partners" : "opponents"}. Remove that request.`);
       if (r.time && !times.includes(r.time)) throw new PadelError(`The request for ${reqLabel(r)} is at ${r.time}, which isn't a block time.`);
       // everyone who has to be on court: a group brings its members' fixed partners
       const people = r.type === "group" ? [...new Set(r.members.flatMap(n => (players[n].partner ? [n, players[n].partner] : [n])))] : who;
@@ -860,7 +890,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     else if (plan.need > plan.slots) throw new PadelError(`With the times people can't play, there are only ${plan.slots} playing places but ${plan.need} are needed for everyone's ${opts.minMinutes} minutes. Open another court, untick some times, or remove someone.`);
     const used = plan.used, order = courtOrderList(opts.courtOrder, open);
     let seed = opts.seed == null ? Math.floor(Math.random() * 1e6) + 1 : +opts.seed;
-    const requests = (opts.requests || []).map(r => ({ type: r.type, a: r.a, b: r.b, members: r.members, time: r.time || null, count: r.count || 1, auto: !!r.auto, key: r.key || null }));
+    const requests = (opts.requests || []).map(r => ({ type: r.type, a: r.a, b: r.b, members: r.members, teams: r.teams, time: r.time || null, count: r.count || 1, auto: !!r.auto, key: r.key || null }));
     placeRequests(requests, players, times, plan, makeRng(seed));   // throws early on impossible manual requests
     let res = null, attempt = 0, placed = [], unplaced = [], hourOk = false, best = null;
     for (; attempt < MAX_ATTEMPTS; attempt++) {
@@ -888,8 +918,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
       players: pl,
       numbers: assignNumbers(Object.keys(players)),
       blocks: res.blocks,
-      requests: placed.map(r => ({ type: r.type, a: r.a, b: r.b, members: r.members, people: r.people, time: r.time, auto: r.auto, key: r.key, copy: r.copy })),
-      requestsSkipped: unplaced.map(u => ({ type: u.r.type, a: u.r.a, b: u.r.b, members: u.r.members, key: u.r.key, why: u.why })),
+      requests: placed.map(r => ({ type: r.type, a: r.a, b: r.b, members: r.members, teams: r.teams, people: r.people, time: r.time, auto: r.auto, key: r.key, copy: r.copy })),
+      requestsSkipped: unplaced.map(u => ({ type: u.r.type, a: u.r.a, b: u.r.b, members: u.r.members, teams: u.r.teams, key: u.r.key, why: u.why })),
       pairBreaks: res.pairBreaks,
     };
   }
@@ -980,7 +1010,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     const counts = gamesPlayed(s);
     const pairs = active.filter(n => P[n].partner && P[P[n].partner] && P[P[n].partner].droppedFrom == null).length / 2;
     const opp = new Map(), part = new Map();
-    const asked = new Set((s.requests || []).filter(r => r.type === "partners").map(r => key(r.a, r.b)));
+    const asked = new Set((s.requests || []).flatMap(r => (r.type === "partners" ? [key(r.a, r.b)] : r.type === "match" ? r.teams.map(t => key(t[0], t[1])) : [])));
     const gaps = [], spreads = [];
     let short = 0, gGames = 0, gMet = 0;
     const gMisses = [];
@@ -1019,7 +1049,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   // Each game request and whether it still holds (dropouts or swaps can undo one).
   function requestStatus(s) {
     return (s.requests || []).map(r => {
-      const gone = (r.type === "group" ? r.people || r.members : [r.a, r.b]).filter(n => s.players[n] && s.players[n].droppedFrom != null && times(s).indexOf(s.players[n].droppedFrom) <= times(s).indexOf(r.time));
+      const gone = (r.type === "group" ? r.people || r.members : r.type === "match" ? r.teams.flat() : [r.a, r.b]).filter(n => s.players[n] && s.players[n].droppedFrom != null && times(s).indexOf(s.players[n].droppedFrom) <= times(s).indexOf(r.time));
       const m = requestMet(s.blocks, r);
       return Object.assign({}, r, { met: !!m, court: m ? m.court : null, why: m ? "" : gone.length ? `${gone.join(" and ")} dropped out` : "changed by a swap" });
     });
@@ -1942,15 +1972,28 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
         const members = r.members.map(byId).filter(Boolean).map(x => x.name);
         return members.length >= 2 ? { type: "group", members, count: r.count || 2, auto: !!r.auto, key: r.id } : null;
       }
+      if (r.type === "match") {
+        const teams = r.teams.map(t => t.map(byId));
+        return teams.flat().every(Boolean) ? { type: "match", teams: teams.map(t => t.map(x => x.name)), time: r.time || null, count: r.count || 1, key: r.id } : null;
+      }
       const A = byId(r.a), B = byId(r.b);
       return A && B ? { type: r.type, a: A.name, b: B.name, time: r.time || null, count: r.count || 1, auto: !!r.auto, key: r.id } : null;
     }).filter(Boolean);
   }
-  function reqValid(r) { return r.type === "group" ? r.members.filter(byId).length >= 2 : byId(r.a) && byId(r.b); }
+  function reqValid(r) {
+    if (r.type === "group") return r.members.filter(byId).length >= 2;
+    if (r.type === "match") return r.teams.flat().every(byId);
+    return byId(r.a) && byId(r.b);
+  }
   function reqText(r) {
     const word = { partners: "partners", opponents: "opponents", court: "on the same court" };
     const n = r.count || 1, times = n > 1 ? ` ${n} times` : "";
     if (r.type === "group") return `<b>Group:</b> ${r.members.map(byId).filter(Boolean).map(x => esc(x.name)).join(", ")} <span class="when">· together on one court${times || " once"}${r.auto ? " · from sign-ups" : ""}</span>`;
+    if (r.type === "match") {
+      const ids = r.teams.flat(), team = t => t.map(id => `<b>${esc(byId(id).name)}</b>`).join(" & ");
+      const splits = ids.map(byId).filter(x => x.partner && !r.teams.some(t => t.includes(x.id) && t.includes(x.partner))).map(x => `${x.name} & ${byId(x.partner).name} split for that game`);
+      return `<b>Match:</b> ${team(r.teams[0])} vs ${team(r.teams[1])} <span class="when">· ${n > 1 ? n + " times" : "once"} · ${r.time ? "at " + r.time : "any time"}${splits.length ? " · " + esc(splits.join(", ")) : ""}</span>`;
+    }
     const A = byId(r.a), B = byId(r.b);
     const pairNote = [A, B].filter(x => x.partner && x.partner !== (x === A ? B.id : A.id)).map(x => `${x.name} & ${byId(x.partner).name} split for that game`);
     return `<b>${esc(A.name)}</b> & <b>${esc(B.name)}</b> ${word[r.type]}${times} <span class="when">· ${r.time ? "at " + r.time : "any time"}${r.auto ? " · from sign-ups (shared partner)" : ""}${pairNote.length && r.type === "partners" ? " · " + esc(pairNote.join(", ")) : ""}</span>`;
@@ -1959,7 +2002,8 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
   function renderRequests() {
     const sorted = state.players.slice().sort((a, b) => E.byName(a.name, b.name));
     const opts = sorted.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
-    for (const [id, label] of [["reqA", "First person"], ["reqB", "Second person"]]) {
+    const match = reqType === "match";
+    for (const [id, label] of [["reqA", match ? "Player 1" : "First person"], ["reqB", match ? "Player 2" : "Second person"], ["reqC", "Player 3"], ["reqD", "Player 4"]]) {
       const keep = $(id).value;
       $(id).innerHTML = `<option value="">${label}</option>` + opts;
       if (keep && byId(keep)) $(id).value = keep;
@@ -1970,19 +2014,41 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     $("reqTime").innerHTML = `<option value="">Any time</option>` + ts.map(t => `<option value="${t}">At ${t}</option>`).join("");
     if (ts.includes(keepT)) $("reqTime").value = keepT;
     document.querySelectorAll("#reqType [data-t]").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === reqType));
+    $("reqTeam1").hidden = !match; $("reqTeam2Row").hidden = !match;
     state.requests = (state.requests || []).filter(reqValid);
     $("reqList").innerHTML = state.requests.map(r => `<li><span>${reqText(r)}</span>
         <button type="button" class="icon-btn" data-req="${r.id}" aria-label="Remove request">&times;</button></li>`).join("");
     $("reqPanel").hidden = state.players.length < 2;
   }
   $("reqType").addEventListener("click", e => { const b = e.target.closest("[data-t]"); if (!b) return; reqType = b.dataset.t; renderRequests(); });
+  // Picking someone with a fixed partner fills the partner in next to them (match only).
+  [["reqA", "reqB"], ["reqB", "reqA"], ["reqC", "reqD"], ["reqD", "reqC"]].forEach(([from, to]) => $(from).addEventListener("change", () => {
+    if (reqType !== "match") return;
+    const p = byId($(from).value);
+    if (p && p.partner && !$(to).value) $(to).value = p.partner;
+  }));
   $("reqAdd").addEventListener("click", () => {
+    const count = +$("reqCount").value || 1;
+    if (reqType === "match") {
+      const ids = ["reqA", "reqB", "reqC", "reqD"].map(id => $(id).value);
+      if (ids.some(x => !x)) { toast("Pick all four players"); return; }
+      if (new Set(ids).size < 4) { toast("Pick four different people"); return; }
+      const teams = [[ids[0], ids[1]], [ids[2], ids[3]]];
+      const across = ids.map(byId).find(x => x.partner && ids.includes(x.partner) && !teams.some(t => t.includes(x.id) && t.includes(x.partner)));
+      if (across) { toast(`${across.name} and ${byId(across.partner).name} are a fixed pair, so put them on the same side`); return; }
+      state.requests.push({ id: pid(), type: "match", teams, time: $("reqTime").value || null, count });
+      ["reqA", "reqB", "reqC", "reqD"].forEach(id => { $(id).value = ""; });
+      if (state.schedule) state.stale = true;
+      save(); renderRequests(); renderCapacity();
+      toast(`Match added. Press ${state.schedule ? "Shuffle again" : "Make schedule"} to use it.`);
+      return;
+    }
     const a = $("reqA").value, b = $("reqB").value;
     if (!a || !b) { toast("Pick two people first"); return; }
     if (a === b) { toast("Pick two different people"); return; }
     const A = byId(a), B = byId(b);
     if (A.partner === b && reqType !== "court") { toast(`${A.name} and ${B.name} are already a fixed pair`); return; }
-    state.requests.push({ id: pid(), a, b, type: reqType, time: $("reqTime").value || null });
+    state.requests.push({ id: pid(), a, b, type: reqType, time: $("reqTime").value || null, count });
     $("reqA").value = ""; $("reqB").value = "";
     if (state.schedule) state.stale = true;
     save(); renderRequests(); renderCapacity();
@@ -2154,7 +2220,7 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     if (b.dataset.act === "ungroup") { leaveGroup(p); playersChanged(); toast(`${p.name} taken out of their groups and shared partners`); }
     if (b.dataset.act === "del") {
       leaveGroup(p);
-      state.requests = (state.requests || []).filter(r => r.type === "group" || (r.a !== p.id && r.b !== p.id));
+      state.requests = (state.requests || []).filter(r => r.type === "group" || (r.type === "match" ? !r.teams.flat().includes(p.id) : r.a !== p.id && r.b !== p.id));
       state.players.forEach(q => { if (q.partner === p.id) q.partner = null; });
       state.players = state.players.filter(q => q !== p);
       playersChanged(); toast(`Removed ${p.name}`);
@@ -2417,14 +2483,15 @@ label.field input, label.field select { color: var(--ink); font-weight: 400; fon
     }
     const reqs = E.requestStatus(state.schedule), skipped = state.schedule.requestsSkipped || [];
     if (reqs.length || skipped.length) {
-      const word = { partners: "partners", opponents: "opponents", court: "same court", group: "together" };
+      const word = { partners: "partners", opponents: "opponents", court: "same court", group: "together", match: "" };
+      const whoOf = r => (r.type === "group" ? r.members.join(", ") : r.type === "match" ? `${r.teams[0].join(" & ")} vs ${r.teams[1].join(" & ")}` : `${r.a} & ${r.b}`);
       const byKey = new Map();
       reqs.forEach(r => { const k = r.key || `${r.type}|${r.a}|${r.b}|${(r.members || []).join(",")}`; if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(r); });
       const lines = [...byKey.values()].map(list => {
-        const r = list[0], who = r.type === "group" ? r.members.join(", ") : `${r.a} & ${r.b}`;
-        return `${who} ${word[r.type]}: ${list.map(x => (x.met ? `${x.time} C${x.court}` : `not met (${x.why})`)).join(", ")}`;
+        const r = list[0], who = whoOf(r);
+        return `${who}${word[r.type] ? " " + word[r.type] : ""}: ${list.map(x => (x.met ? `${x.time} C${x.court}` : `not met (${x.why})`)).join(", ")}`;
       });
-      skipped.forEach(x => lines.push(`${x.type === "group" ? x.members.join(", ") : x.a + " & " + x.b}: skipped (${x.why})`));
+      skipped.forEach(x => lines.push(`${whoOf(x)}: skipped (${x.why})`));
       const met = reqs.filter(r => r.met).length, total = reqs.length + skipped.length;
       const groupsN = new Set(reqs.filter(r => r.type === "group").map(r => r.key)).size;
       stats.push([met === total ? "good" : "bad", "Game requests and groups", `${met} of ${total} met`,

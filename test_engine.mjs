@@ -576,3 +576,40 @@ test("court order: strongest to weakest in the chosen order, beginner court fixe
     assert.equal(weakest.court, 1, "beginners now on Court 1");
   });
 });
+
+test("match requests: pair vs pair", () => {
+  const sameSet = (t, u) => t.length === u.length && u.every(x => t.includes(x));
+  const findMatch = (s, st) => s.blocks.find(b => b.time === st.time).games.find(g => g.court === st.court);
+  for (let seed = 0; seed < 4; seed++) {
+    const players = roster(40, 6, seed);   // fixed pairs: 00+01, 02+03, 04+05 ...
+    // fixed pair vs two singles, twice
+    const m1 = { type: "match", teams: [["Player 00", "Player 01"], ["Player 20", "Player 21"]], count: 2 };
+    // splits Player 02 from fixed partner 03 for that game only, at a set time
+    const m2 = { type: "match", teams: [["Player 02", "Player 22"], ["Player 23", "Player 24"]], time: "15:00" };
+    const s = E.generate(players, { seed, closedCourts: [6, 7], requests: [m1, m2] });
+    same(E.validate(s).problems, [], `seed ${seed}`);
+    same([...new Set(Object.values(E.gamesPlayed(s)))], [4], "everyone's hour kept at exact capacity");
+    const st = E.requestStatus(s);
+    assert.equal(st.length, 3);
+    assert.ok(st.every(x => x.met), JSON.stringify(st));
+    const ones = st.filter(x => x.teams[0][0] === "Player 00");
+    assert.notEqual(ones[0].time, ones[1].time, "twice, in different blocks");
+    for (const x of st) {
+      const g = findMatch(s, x);
+      assert.ok((sameSet(g.teams[0], x.teams[0]) && sameSet(g.teams[1], x.teams[1])) || (sameSet(g.teams[0], x.teams[1]) && sameSet(g.teams[1], x.teams[0])), "exact sides");
+    }
+    const t2 = st.find(x => x.teams[0][0] === "Player 02");
+    assert.equal(t2.time, "15:00");
+    assert.ok(s.blocks.find(b => b.time === "15:00").games.some(g => g.teams.flat().includes("Player 03")), "split-off partner still plays then");
+    for (const b of s.blocks) if (b.time !== "15:00") for (const g of b.games) for (const t of g.teams) if (t.includes("Player 02")) assert.ok(t.includes("Player 03"));
+    assert.ok(!(s.pairBreaks || []).some(pb => pb.pair.includes("Player 00")), "teammates who are a fixed pair aren't 'split'");
+  }
+  const players = roster(40, 6, 1);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ type: "match", teams: [["Player 20", "Player 21"], ["Player 20", "Player 22"]] }] }), /twice/);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ type: "match", teams: [["Player 00", "Player 20"], ["Player 01", "Player 21"]] }] }), /opposite sides/);
+  players["Player 20"].unavailable = ["14:00"];
+  assert.throws(() => E.generate(players, { seed: 1, requests: [{ type: "match", teams: [["Player 20", "Player 21"], ["Player 22", "Player 23"]], time: "14:00" }] }), /can't play at 14:00/);
+  assert.throws(() => E.generate(players, { seed: 1, requests: [
+    { type: "match", teams: [["Player 21", "Player 22"], ["Player 23", "Player 24"]], time: "14:30" },
+    { type: "court", a: "Player 21", b: "Player 30", time: "14:30" }] }), /two game requests at 14:30/);
+});
